@@ -2,7 +2,7 @@ package copy
 
 import (
 	"fmt"
-	"github.com/tkashem/rebase/pkg/git"
+	"github.com/openshift/rebase/pkg/git"
 	"k8s.io/klog/v2"
 )
 

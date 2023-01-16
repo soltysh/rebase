@@ -5,8 +5,8 @@ import (
 	"k8s.io/klog/v2"
 
 	flag "github.com/spf13/pflag"
-	"github.com/tkashem/rebase/pkg/apply"
-	"github.com/tkashem/rebase/pkg/carry"
+	"github.com/openshift/rebase/pkg/apply"
+	"github.com/openshift/rebase/pkg/carry"
 )
 
 type ApplyOptions struct {

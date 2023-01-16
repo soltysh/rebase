@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	gitv5object "github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/tkashem/rebase/pkg/git"
+	"github.com/openshift/rebase/pkg/git"
 	"k8s.io/klog/v2"
 )
 

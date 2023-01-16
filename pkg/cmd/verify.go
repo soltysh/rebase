@@ -4,8 +4,8 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/klog/v2"
 
-	"github.com/tkashem/rebase/pkg/carry"
-	"github.com/tkashem/rebase/pkg/verify"
+	"github.com/openshift/rebase/pkg/carry"
+	"github.com/openshift/rebase/pkg/verify"
 )
 
 type VerifyOptions struct {

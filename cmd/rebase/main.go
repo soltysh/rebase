@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/pflag"
 	"k8s.io/klog/v2"
 
-	pkgcmd "github.com/tkashem/rebase/pkg/cmd"
+	"github.com/openshift/rebase/pkg/cmd"
 )
 
 func main() {
@@ -23,18 +23,13 @@ func main() {
 }
 
 func NewRootCommand() *cobra.Command {
-	cmd := &cobra.Command{
+	command := &cobra.Command{
 		Use:          "rebase",
-		Short:        "rebase helper",
 		SilenceUsage: true,
-		RunE: func(c *cobra.Command, args []string) error {
-			return nil
-		},
 	}
+	command.AddCommand(cmd.NewApplyCommand())
+	command.AddCommand(cmd.NewVerifyCommand())
+	command.AddCommand(cmd.NewCopyCommand())
 
-	cmd.AddCommand(pkgcmd.NewApplyCommand())
-	cmd.AddCommand(pkgcmd.NewVerifyCommand())
-	cmd.AddCommand(pkgcmd.NewCopyCommand())
-
-	return cmd
+	return command
 }

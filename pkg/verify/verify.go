@@ -9,8 +9,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	gitv5object "github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/tkashem/rebase/pkg/carry"
-	"github.com/tkashem/rebase/pkg/git"
+	"github.com/openshift/rebase/pkg/carry"
+	"github.com/openshift/rebase/pkg/git"
 	"k8s.io/klog/v2"
 )
 

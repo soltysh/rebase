@@ -2,8 +2,8 @@
 
 
 steps:
-1. bump openshift/api, open a PR 
-(it has dependency on k8s.io repos, no dependency on openshift/* repo)   
+1. bump openshift/api, open a PR
+(it has dependency on k8s.io repos, no dependency on openshift/* repo)
 
 2. bump openshift/client-go, open a PR
 - bump k8s.io version
@@ -12,7 +12,7 @@ steps:
 
 3. bump openshift/library-go, open a PR
 - bump k8s.io version
-- bump github.com/openshift/api (pin to the branch you created in step 1 temporarily) 
+- bump github.com/openshift/api (pin to the branch you created in step 1 temporarily)
 - bump github.com/openshift/client-go (pin to the branch you created in step 2 temporarily)
 
 4. bump openshift/apiserver-library-go, open a PR
@@ -28,13 +28,13 @@ make sure you only specify the major.minor.patch of the target version. for exam
 using tag `v1.24.0-rc-0` then specify `1.24.0` as the kubernetes version in Dockerfile.rhel
 ```
 LABEL io.openshift.build.versions="kubernetes=1.24.0"
-```   
+```
 
 7. create a new commit with the following:
 - A: hack/pin-dependency.sh openshift/api {your branch from 1}
      hack/update-vendor.sh
 - B: hack/pin-dependency.sh openshift/client-go {your branch from 2}
-     hack/update-vendor.sh 
+     hack/update-vendor.sh
 - C: hack/pin-dependency.sh openshift/library-go {your branch from 3}
      hack/update-vendor.sh
 - B: hack/pin-dependency.sh openshift/apiserver-library-go {your branch from 4}
@@ -65,7 +65,7 @@ protoc 3.0.0
 10. make test
 
 ```
-$ GITHUB_AUTH_TOKEN={your github access token} /home/akashem/go/src/github.com/tkashem/rebase/output/rebase apply --target=v1.24 --carry-commit-file=/home/akashem/go/src/github.com/tkashem/rebase/carries/v1.24/carry-commits-v1.24.log --overrides=/home/akashem/go/src/github.com/tkashem/rebase/carries/v1.24/overrides.yaml
+$ GITHUB_AUTH_TOKEN={your github access token} ${HOME}/go/src/github.com/openshift/rebase/output/rebase apply --target=v1.24 --carry-commit-file=${HOME}/go/src/github.com/openshift/rebase/carries/v1.24/carry-commits-v1.24.log --overrides=${HOME}/go/src/github.com/openshift/rebase/carries/v1.24/overrides.yaml
 ```
 
 
@@ -88,7 +88,7 @@ fb7cfdedf8487d917daed3f688f6aec8e0d90986
 
 add a new commit with summary
 ```
-UPSTREAM: drop: 
+UPSTREAM: drop:
 ```
 
 after the k8s bump merges, you'll need to wait for ART to provide the base image with new kubelet
@@ -101,15 +101,15 @@ apiserver: add system_client=kube-{apiserver,cm,s} to apiserver_request_total
 
 
     UPSTREAM: <drop>: pin ginkgo to openshift fork at origin-4.7 branch
-    
+
     add openshift/ginkgo in replace of go.mod
     github.com/onsi/ginkgo => github.com/openshift/ginkgo origin-4.7
-    
+
     for the following files:
         go.mod
         staging/src/k8s.io/code-generator/go.mod
         staging/src/k8s.io/code-generator/examples/go.mod
-    
+
     run the following comand:
     - go mod tidy
     - hack/update-vendor.sh
@@ -155,7 +155,7 @@ in order to fix it:
 	github.com/openshift/client-go => github.com/tkashem/openshift-client-go bump-1.24
 	github.com/openshift/apiserver-library-go => github.com/tkashem/apiserver-library-go bump-1.24
     github.com/openshift/library-go => github.com/tkashem/library-go  bump-1.24
-    
+
     github.com/onsi/ginkgo => github.com/openshift/ginkgo origin-4.7
 ```
 
@@ -221,7 +221,7 @@ to work around, we do the following:
 - run 'go mod vendor'
 
 - change directory to root
-- run make update, using the following command 
+- run make update, using the following command
 
 docker run -it --rm -v $( pwd ):/go/src/k8s.io/kubernetes:Z \
   --workdir=/go/src/k8s.io/kubernetes \
@@ -276,7 +276,7 @@ E0427 00:30:20.176823
 
 
 kube-apiserver-de1b86ce20e86157bc63fecae1db9204a023b8e5b27b8a9de770b02debc6d73a.log
-start: I0427 00:00:34.932547 
+start: I0427 00:00:34.932547
 end:   I0427 00:21:49.467558
 
 

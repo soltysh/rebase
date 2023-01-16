@@ -1,8 +1,8 @@
 package verify
 
 import (
-	"github.com/tkashem/rebase/pkg/carry"
-	"github.com/tkashem/rebase/pkg/git"
+	"github.com/openshift/rebase/pkg/carry"
+	"github.com/openshift/rebase/pkg/git"
 )
 
 // it outputs the original commit summaries

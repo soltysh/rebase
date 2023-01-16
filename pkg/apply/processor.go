@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/tkashem/rebase/pkg/carry"
-	"github.com/tkashem/rebase/pkg/git"
+	"github.com/openshift/rebase/pkg/carry"
+	"github.com/openshift/rebase/pkg/git"
 	"k8s.io/klog/v2"
 )
 

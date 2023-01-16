@@ -1,4 +1,4 @@
-module github.com/tkashem/rebase
+module github.com/openshift/rebase
 
 go 1.19
 

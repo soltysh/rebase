@@ -5,7 +5,7 @@ import (
 	"k8s.io/klog/v2"
 
 	flag "github.com/spf13/pflag"
-	"github.com/tkashem/rebase/pkg/copy"
+	"github.com/openshift/rebase/pkg/copy"
 )
 
 type CopyOptions struct {
