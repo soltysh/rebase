@@ -6,10 +6,11 @@ import (
 	"os/exec"
 	"strings"
 
+	"k8s.io/klog/v2"
+
 	gitv5 "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	gitv5object "github.com/go-git/go-git/v5/plumbing/object"
-	"k8s.io/klog/v2"
 )
 
 type Git interface {
@@ -17,6 +18,8 @@ type Git interface {
 	FindRebaseMarkerCommit(from string, marker string) (*gitv5object.Commit, error)
 	Head() (*gitv5object.Commit, error)
 	Log(from string, stopAtHash string) ([]*gitv5object.Commit, error)
+	LogFromTag(tag string) ([]*gitv5object.Commit, error)
+	LogHash(hash plumbing.Hash) (*gitv5object.Commit, error)
 	CherryPick(sha string) error
 	AbortCherryPick() error
 	AmendCommitMessage(f func(string) []string) error
@@ -83,6 +86,37 @@ func (git *git) FindRebaseMarkerCommit(from string, marker string) (*gitv5object
 	}
 
 	return nil, fmt.Errorf("failed to find commit with marker: %s", marker)
+}
+
+func (git *git) LogFromTag(tag string) ([]*gitv5object.Commit, error) {
+	tagHash, err := git.repository.Tag(tag)
+	if err != nil {
+		return nil, fmt.Errorf("git log failed reading tag %q: %w", tag, err)
+	}
+
+	commit, err := git.repository.TagObject(tagHash.Hash())
+	if err != nil {
+		return nil, fmt.Errorf("git log failed reading tag 1 %q: %w", tag, err)
+	}
+
+	o := &gitv5.LogOptions{Since: &commit.Tagger.When, Order: gitv5.LogOrderCommitterTime}
+	iter, err := git.repository.Log(o)
+	if err != nil {
+		return nil, fmt.Errorf("git log failed since %q: %w", &commit.Tagger.When, err)
+	}
+	defer iter.Close()
+
+	commits := make([]*gitv5object.Commit, 0)
+	iter.ForEach(func(c *gitv5object.Commit) error {
+		commits = append(commits, c)
+		return nil
+	})
+
+	return commits, nil
+}
+
+func (git *git) LogHash(hash plumbing.Hash) (*gitv5object.Commit, error) {
+	return git.repository.CommitObject(hash)
 }
 
 func (git *git) Log(from, stopAtHash string) ([]*gitv5object.Commit, error) {
@@ -229,4 +263,15 @@ func (git *git) fetchURLForRemote(remoteName string) (string, error) {
 		return "", fmt.Errorf("no fetch URLs, remote=%s", remoteName)
 	}
 	return config.URLs[0], nil
+}
+
+type CommitsByDate []*gitv5object.Commit
+
+func (s CommitsByDate) Len() int      { return len(s) }
+func (s CommitsByDate) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+
+func (s CommitsByDate) Less(i, j int) bool {
+	iDate := s[i].Committer.When
+	jDate := s[j].Committer.When
+	return iDate.Before(jDate)
 }
