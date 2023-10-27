@@ -33,6 +33,7 @@ func NewRootCommand() *cobra.Command {
 	streams := options.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}
 
 	command.AddCommand(cmd.NewCarriesCommand(streams))
+	command.AddCommand(cmd.NewApplyCommand(streams))
 
 	logging := flag.NewFlagSet("logging", flag.ContinueOnError)
 	klog.InitFlags(logging)

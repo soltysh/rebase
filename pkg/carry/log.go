@@ -17,20 +17,24 @@ const (
 	upstreamPrefix = "UPSTREAM: "
 )
 
-type Logger struct {
+type Log struct {
 	from          string
 	repositoryDir string
 }
 
-func NewLogger(from, repositoryDir string) *Logger {
-	return &Logger{
+func NewLog(from, repositoryDir string) *Log {
+	return &Log{
 		from:          from,
 		repositoryDir: repositoryDir,
 	}
 }
 
-func (c *Logger) Run() error {
-	commits, err := c.GetCommits()
+func (c *Log) Run() error {
+	repository, err := git.OpenGit(c.repositoryDir)
+	if err != nil {
+		return err
+	}
+	commits, err := c.GetCommits(repository)
 	if err != nil {
 		return fmt.Errorf("Error reading carries: %w", err)
 	}
@@ -41,9 +45,8 @@ func (c *Logger) Run() error {
 	return nil
 }
 
-func (c *Logger) GetCommits() ([]*gitv5object.Commit, error) {
-	repository, err := git.OpenGit(c.repositoryDir)
-	if err != nil {
+func (c *Log) GetCommits(repository git.Git) ([]*gitv5object.Commit, error) {
+	if err := repository.Checkout("openshift/master"); err != nil {
 		return nil, err
 	}
 	commits, err := repository.LogFromTag(c.from)

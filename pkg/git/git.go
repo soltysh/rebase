@@ -18,8 +18,14 @@ type Git interface {
 	LogFromTag(tag string) ([]*gitv5object.Commit, error)
 	// Commit returns commit for a given has
 	Commit(hash plumbing.Hash) (*gitv5object.Commit, error)
+	// Checkout the specified remote
+	Checkout(remote string) error
+	// CreateBranch creates a named branch based on remote
+	CreateBranch(name, remote string) error
 	// CherryPick invokes the cherry-pick command
 	CherryPick(sha string) error
+	// Merge remote branch
+	Merge(remote string) error
 }
 
 // OpenGit opens path as a git repository, ensuring that remotes contain
@@ -30,8 +36,8 @@ func OpenGit(path string) (Git, error) {
 	if err != nil {
 		return nil, err
 	}
-	gitRepo := &git{repository: repository}
-	klog.V(2).Infof("Checking if openshift and upstream remotes are configured..", path)
+	gitRepo := &git{repository: repository, path: path}
+	klog.V(2).Infof("Checking if openshift and upstream remotes are configured..")
 	if err := gitRepo.checkRemotes(); err != nil {
 		return nil, err
 	}
@@ -39,6 +45,7 @@ func OpenGit(path string) (Git, error) {
 }
 
 type git struct {
+	path       string
 	repository *gitv5.Repository
 }
 
@@ -68,6 +75,7 @@ func (git *git) checkRemotes() error {
 			return fmt.Errorf("no fetch URLs, remote=%s", remote.name)
 		}
 		fetchURL := config.URLs[0]
+		// TODO: add auto-updating remotes if the above are missing, there's CreateRemote function
 		if !strings.Contains(fetchURL, remote.path) {
 			return fmt.Errorf("fetch URL does not match, remote=%s path=%s", remote.name, remote.path)
 		}
@@ -80,18 +88,18 @@ func (git *git) checkRemotes() error {
 func (git *git) LogFromTag(tag string) ([]*gitv5object.Commit, error) {
 	tagHash, err := git.repository.Tag(tag)
 	if err != nil {
-		return nil, fmt.Errorf("git log failed reading tag %q: %w", tag, err)
+		return nil, err
 	}
 
 	commit, err := git.repository.TagObject(tagHash.Hash())
 	if err != nil {
-		return nil, fmt.Errorf("git log failed reading tag 1 %q: %w", tag, err)
+		return nil, err
 	}
 
 	o := &gitv5.LogOptions{Since: &commit.Tagger.When, Order: gitv5.LogOrderCommitterTime}
 	iter, err := git.repository.Log(o)
 	if err != nil {
-		return nil, fmt.Errorf("git log failed since %q: %w", &commit.Tagger.When, err)
+		return nil, err
 	}
 	defer iter.Close()
 
@@ -104,33 +112,44 @@ func (git *git) LogFromTag(tag string) ([]*gitv5object.Commit, error) {
 	return commits, nil
 }
 
+// Checkout the specified remote
+func (git *git) Checkout(remote string) error {
+	return git.runGit("checkout", remote)
+}
+
 // Commit returns commit for a given has
 // TODO: can we pass has as a string?
 func (git *git) Commit(hash plumbing.Hash) (*gitv5object.Commit, error) {
 	return git.repository.CommitObject(hash)
 }
 
+// CreateBranch creates a named branch based on remote
+func (git *git) CreateBranch(name, remote string) error {
+	return git.runGit("checkout", "-b", name, remote)
+}
+
+// Merge remote branch
+func (git *git) Merge(remote string) error {
+	return git.runGit("merge", "--strategy", "ours", remote, "--no-edit")
+}
+
 // CherryPick invokes the cherry-pick command
 func (git *git) CherryPick(sha string) error {
-	// skipping --strategy-option=ours
-	cmd := exec.Command("git", "cherry-pick", "--allow-empty", sha)
+	return git.runGit("cherry-pick", sha)
+}
 
-	var stdoutStderr []byte
-	var err error
-
-	klog.InfoS("executing cherry-pick", "command", cmd.String())
-	defer func() {
-		if len(stdoutStderr) > 0 {
-			defer klog.Infof(">>>>>>>>>>>>>>>>>>>> OUTPUT: END >>>>>>>>>>>>>>>>>>>>>>\n")
-			klog.Infof("<<<<<<<<<<<<<<<<<<<< OUTPUT: START <<<<<<<<<<<<<<<<<<<<\n%s", stdoutStderr)
-		}
-	}()
-
-	stdoutStderr, err = cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("git cherry-pick failed: %w", err)
-	}
-	return nil
+func (git *git) runGit(args ...string) error {
+	// cmd := exec.Command("git", "merge", "--strategy", "ours", remote, "--no-edit")
+	cmd := exec.Command("git", args...)
+	klog.V(2).Infof("Invoking %s...", cmd)
+	cmd.Dir = git.path
+	var (
+		output []byte
+		err    error
+	)
+	output, err = cmd.CombinedOutput()
+	klog.V(3).Infof(string(output))
+	return err
 }
 
 // CommitsByDate sorts a list of commits by date

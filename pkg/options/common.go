@@ -1,6 +1,7 @@
 package options
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/spf13/pflag"
@@ -12,6 +13,9 @@ type Common struct {
 
 	// kubernetes repository directory, as specified by the user or current working dir
 	RepositoryDir string
+
+	// kubernetes tag, from which to act on
+	From string
 }
 
 func NewCommon(streams IOStreams) Common {
@@ -22,6 +26,7 @@ func NewCommon(streams IOStreams) Common {
 
 func (o *Common) AddFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&o.RepositoryDir, "repository", o.RepositoryDir, "Kubernetes repository directory, or current if none specified")
+	flags.StringVar(&o.From, "from", o.From, "Kubernetes starting version tag")
 }
 
 func (o *Common) Complete() error {
@@ -31,6 +36,9 @@ func (o *Common) Complete() error {
 		if err != nil {
 			return err
 		}
+	}
+	if len(o.From) == 0 {
+		return fmt.Errorf(`Error: required flag(s) "from" not set`)
 	}
 	return nil
 }
