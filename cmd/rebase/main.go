@@ -31,8 +31,6 @@ func NewRootCommand() *cobra.Command {
 		SilenceUsage: true,
 	}
 	streams := options.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}
-	// TODO: generate log command
-	command.AddCommand(cmd.NewCarriesLogCommand(streams))
 
 	// TODO: verify and apply should be the same command with --verify/--dry-run flag
 	command.AddCommand(cmd.NewApplyCommand())
@@ -40,6 +38,7 @@ func NewRootCommand() *cobra.Command {
 
 	// TODO: what's the difference between apply and copy?
 	command.AddCommand(cmd.NewCopyCommand())
+	command.AddCommand(cmd.NewCarriesCommand(streams))
 
 	logging := flag.NewFlagSet("logging", flag.ContinueOnError)
 	klog.InitFlags(logging)

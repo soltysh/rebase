@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
+	gitv5object "github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/openshift/rebase/pkg/git"
 	"k8s.io/klog/v2"
 )
@@ -15,29 +17,42 @@ const (
 	upstreamPrefix = "UPSTREAM: "
 )
 
-type CarriesLogger struct {
+type Logger struct {
 	from          string
 	repositoryDir string
 }
 
-func NewLog(from, repositoryDir string) *CarriesLogger {
-	return &CarriesLogger{
+func NewLogger(from, repositoryDir string) *Logger {
+	return &Logger{
 		from:          from,
 		repositoryDir: repositoryDir,
 	}
 }
 
-func (c *CarriesLogger) Run() error {
+func (c *Logger) Run() error {
+	commits, err := c.GetCommits()
+	if err != nil {
+		return fmt.Errorf("Error reading carries: %w", err)
+	}
+	for _, c := range commits {
+		fmt.Printf("%s\t%-25s\t%s\t%s\n", c.Author.When.Format(time.DateTime),
+			c.Author.Name, c.Hash.String(), formatMessage(c.Message))
+	}
+	return nil
+}
+
+func (c *Logger) GetCommits() ([]*gitv5object.Commit, error) {
 	repository, err := git.OpenGit(c.repositoryDir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	commits, err := repository.LogFromTag(c.from)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	sort.Sort(git.CommitsByDate(commits))
 	foundRebaseMarker := false
+	var carryCommits []*gitv5object.Commit
 	for _, c := range commits {
 		if !foundRebaseMarker {
 			if strings.Contains(c.Message, rebaseMarker) {
@@ -56,7 +71,7 @@ func (c *CarriesLogger) Run() error {
 			// 2022-06-09 00:31:24 -0400 -0400 OpenShift Merge Robot Merge pull request #1229 from rphillips/backports/109103 cb7147853d28e94e1e32674d535e53aec4d9946f
 			// 2022-03-29 23:53:02 +0800 +0800 DingShujie UPSTREAM: 109103: cpu manager policy set to none, no one remove container id from container map, lea ed4d3f61aaccbc2fbe383c4d6b9614e8d2ad3e16
 			for _, hash := range c.ParentHashes {
-				ci, err := repository.LogHash(hash)
+				ci, err := repository.Commit(hash)
 				if err != nil {
 					klog.Errorf("error reading commit %s: %v", hash, err)
 					continue
@@ -64,15 +79,17 @@ func (c *CarriesLogger) Run() error {
 				if strings.Contains(ci.Message, mergeMarker) {
 					continue
 				}
-				fmt.Printf("%s\t%-25s\t%s\t%s\n", ci.Author.When, ci.Author.Name, formatMessage(ci.Message), ci.Hash.String())
+				carryCommits = append(carryCommits, ci)
 			}
 			continue
 		}
-		fmt.Printf("%s\t%-25s\t%s\t%s\n", c.Author.When, c.Author.Name, formatMessage(c.Message), c.Hash.String())
+		carryCommits = append(carryCommits, c)
 	}
-	return nil
+	return carryCommits, nil
 }
 
+// formatMessage trims message to fit in first line of commits message
+// or only the first 100 characters.
 func formatMessage(message string) string {
 	msg := strings.TrimSpace(message)
 	max := len(msg)
