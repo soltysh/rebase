@@ -11,7 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	stdioutil "io/ioutil"
+	"regexp"
 	"strings"
 	"time"
 
@@ -29,6 +29,10 @@ const (
 
 var (
 	ErrTimeoutExceeded = errors.New("timeout exceeded")
+	// stdErrSkipPattern is used for skipping lines from a command's stderr output.
+	// Any line matching this pattern will be skipped from further
+	// processing and not be returned to calling code.
+	stdErrSkipPattern = regexp.MustCompile("^remote:( =*){0,1}$")
 )
 
 // Commander creates Command instances. This is the main entry point for
@@ -150,13 +154,20 @@ func (c *client) listenFirstError(r io.Reader) chan string {
 	errLine := make(chan string, 1)
 	go func() {
 		s := bufio.NewScanner(r)
-		if s.Scan() {
-			errLine <- s.Text()
-		} else {
-			close(errLine)
+		for {
+			if s.Scan() {
+				line := s.Text()
+				if !stdErrSkipPattern.MatchString(line) {
+					errLine <- line
+					break
+				}
+			} else {
+				close(errLine)
+				break
+			}
 		}
 
-		_, _ = io.Copy(stdioutil.Discard, r)
+		_, _ = io.Copy(io.Discard, r)
 	}()
 
 	return errLine
@@ -233,7 +244,7 @@ func (s *session) handleAdvRefDecodeError(err error) error {
 // UploadPack performs a request to the server to fetch a packfile. A reader is
 // returned with the packfile content. The reader must be closed after reading.
 func (s *session) UploadPack(ctx context.Context, req *packp.UploadPackRequest) (*packp.UploadPackResponse, error) {
-	if req.IsEmpty() && len(req.Shallows) == 0 {
+	if req.IsEmpty() {
 		return nil, transport.ErrEmptyUploadPackRequest
 	}
 
@@ -374,7 +385,7 @@ func (s *session) checkNotFoundError() error {
 	case <-t.C:
 		return ErrTimeoutExceeded
 	case line, ok := <-s.firstErrLine:
-		if !ok {
+		if !ok || len(line) == 0 {
 			return nil
 		}
 
@@ -394,6 +405,7 @@ var (
 	gitProtocolNoSuchErr       = "ERR no such repository"
 	gitProtocolAccessDeniedErr = "ERR access denied"
 	gogsAccessDeniedErr        = "Gogs: Repository does not exist or you do not have access"
+	gitlabRepoNotFoundErr      = "remote: ERROR: The project you were looking for could not be found"
 )
 
 func isRepoNotFoundError(s string) bool {
@@ -425,13 +437,12 @@ func isRepoNotFoundError(s string) bool {
 		return true
 	}
 
+	if strings.HasPrefix(s, gitlabRepoNotFoundErr) {
+		return true
+	}
+
 	return false
 }
-
-var (
-	nak = []byte("NAK")
-	eol = []byte("\n")
-)
 
 // uploadPack implements the git-upload-pack protocol.
 func uploadPack(w io.WriteCloser, r io.Reader, req *packp.UploadPackRequest) error {
