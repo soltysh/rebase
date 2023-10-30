@@ -2,10 +2,13 @@ package apply
 
 import (
 	"fmt"
+	"os"
+	"path"
 	"time"
 
 	"github.com/openshift/rebase/pkg/carry"
 	"github.com/openshift/rebase/pkg/git"
+	"k8s.io/klog/v2"
 )
 
 type Apply struct {
@@ -41,10 +44,41 @@ func (c *Apply) Run() error {
 		return fmt.Errorf("Error creating rebase branch: %w", err)
 	}
 	for _, c := range commits {
-		if err := repository.CherryPick(c.Hash.String()); err != nil {
-			// stop on first error for now...
+		if err := repository.CherryPick(c.Hash.String()); err == nil {
+			continue
+		}
+		klog.Infof("Encountered problems picking %s:", c.Hash.String())
+		// print git status
+		if err := repository.Status(); err != nil {
+			return err
+		}
+		if err := repository.AbortCherryPick(); err != nil {
+			return err
+		}
+		klog.Infof("Looking for fixed carry for %s...", c.Hash.String())
+		patch, err := findFixedCarry(c.Hash.String())
+		if err != nil {
+			klog.Infof("Carry https://github.com/openshift/kubernetes/commit/%s requires manual intervention!", c.Hash.String())
+			return err
+		}
+		klog.Infof("Found %s, applying...", patch)
+		if err := repository.Apply(patch); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// findFixedCarry looks for fixed carry patches. Returns path to a file containing
+// the carry or error.
+func findFixedCarry(carrySha string) (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	carryPath := path.Join(cwd, "carries", carrySha)
+	if _, err := os.Stat(carryPath); err != nil {
+		return "", err
+	}
+	return carryPath, nil
 }

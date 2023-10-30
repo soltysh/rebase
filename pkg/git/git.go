@@ -14,18 +14,24 @@ import (
 
 // Git provides an interface for interacting with a git repository.
 type Git interface {
-	// LogFromTag returns a list of carry commits from provided tag
-	LogFromTag(tag string) ([]*gitv5object.Commit, error)
-	// Commit returns commit for a given has
-	Commit(hash plumbing.Hash) (*gitv5object.Commit, error)
+	// AbortCherryPick aborts the current cherry-pick command
+	AbortCherryPick() error
+	// Apply a patch
+	Apply(patch string) error
 	// Checkout the specified remote
 	Checkout(remote string) error
 	// CreateBranch creates a named branch based on remote
 	CreateBranch(name, remote string) error
 	// CherryPick invokes the cherry-pick command
 	CherryPick(sha string) error
+	// Commit returns commit for a given has
+	Commit(hash plumbing.Hash) (*gitv5object.Commit, error)
+	// LogFromTag returns a list of carry commits from provided tag
+	LogFromTag(tag string) ([]*gitv5object.Commit, error)
 	// Merge remote branch
 	Merge(remote string) error
+	// Status prints current status of repository
+	Status() error
 }
 
 // OpenGit opens path as a git repository, ensuring that remotes contain
@@ -136,6 +142,22 @@ func (git *git) Merge(remote string) error {
 // CherryPick invokes the cherry-pick command
 func (git *git) CherryPick(sha string) error {
 	return git.runGit("cherry-pick", sha)
+}
+
+// AbortCherryPick invokes the cherry-pick command
+func (git *git) AbortCherryPick() error {
+	return git.runGit("cherry-pick", "--abort")
+}
+
+// Apply a patch
+func (git *git) Apply(patch string) error {
+	return git.runGit("am", patch)
+}
+
+// Status prints current status of repository
+func (git *git) Status() error {
+	// TODO runGit should return error and outputs separately
+	return git.runGit("status")
 }
 
 func (git *git) runGit(args ...string) error {
