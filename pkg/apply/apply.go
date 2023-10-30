@@ -4,10 +4,14 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"regexp"
+	"strconv"
 	"time"
 
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/openshift/rebase/pkg/carry"
 	"github.com/openshift/rebase/pkg/git"
+	"github.com/openshift/rebase/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
@@ -16,6 +20,10 @@ type Apply struct {
 	from          string
 	repositoryDir string
 }
+
+var (
+	actionRE = regexp.MustCompile(`UPSTREAM: (?P<action>[<>\w]+):`)
+)
 
 func NewApply(from, repositoryDir string) *Apply {
 	return &Apply{
@@ -44,29 +52,62 @@ func (c *Apply) Run() error {
 		return fmt.Errorf("Error creating rebase branch: %w", err)
 	}
 	for _, c := range commits {
-		if err := repository.CherryPick(c.Hash.String()); err == nil {
-			continue
+		klog.V(2).Infof("Processing %s: %q", c.Hash.String(), utils.FormatMessage(c.Message))
+		action := actionFromMessage(utils.FormatMessage(c.Message))
+		if _, err := strconv.Atoi(action); err == nil {
+			// TODO: upstream pick, for now handle as carry
+			action = "<carry>"
 		}
-		klog.Infof("Encountered problems picking %s:", c.Hash.String())
-		// print git status
-		if err := repository.Status(); err != nil {
-			return err
-		}
-		if err := repository.AbortCherryPick(); err != nil {
-			return err
-		}
-		klog.Infof("Looking for fixed carry for %s...", c.Hash.String())
-		patch, err := findFixedCarry(c.Hash.String())
-		if err != nil {
-			klog.Infof("Carry https://github.com/openshift/kubernetes/commit/%s requires manual intervention!", c.Hash.String())
-			return err
-		}
-		klog.Infof("Found %s, applying...", patch)
-		if err := repository.Apply(patch); err != nil {
-			return err
+		switch action {
+		case "<carry>":
+			if err := carryFlow(repository, c); err != nil {
+				// TODO: abort only after 2-3 errors, maybe?
+				return err
+			}
+		case "<drop>":
+			klog.Infof("Dropping commit %s.", c.Hash.String())
+		default:
+			klog.Infof("Unkown action on commit %s: %s", c.Hash.String(), action)
 		}
 	}
 	return nil
+}
+
+// carryFlow implements the carry action
+func carryFlow(repository git.Git, commit *object.Commit) error {
+	klog.V(2).Infof("Initiating carry flow for %s...", commit.Hash.String())
+	if err := repository.CherryPick(commit.Hash.String()); err == nil {
+		return nil
+	}
+	klog.Infof("Encountered problems picking %s:", commit.Hash.String())
+	if err := repository.Status(); err != nil {
+		return err
+	}
+	if err := repository.AbortCherryPick(); err != nil {
+		return err
+	}
+	klog.V(2).Infof("Looking for a fixed carry")
+	patch, err := findFixedCarry(commit.Hash.String())
+	if err != nil {
+		klog.Errorf("Carry https://github.com/openshift/kubernetes/commit/%s requires manual intervention!", commit.Hash.String())
+		return err
+	}
+	klog.Infof("Found %s, applying...", patch)
+	if err := repository.Apply(patch); err != nil {
+		return err
+	}
+	return nil
+}
+
+// actionFromMessage parses the upstream action from commit message, returning
+// which action to take on a commit
+func actionFromMessage(message string) string {
+	matches := actionRE.FindStringSubmatch(message)
+	lastIndex := actionRE.SubexpIndex("action")
+	if lastIndex < 0 {
+		return ""
+	}
+	return matches[lastIndex]
 }
 
 // findFixedCarry looks for fixed carry patches. Returns path to a file containing

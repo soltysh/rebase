@@ -8,6 +8,7 @@ import (
 
 	gitv5object "github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/openshift/rebase/pkg/git"
+	"github.com/openshift/rebase/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
@@ -40,7 +41,7 @@ func (c *Log) Run() error {
 	}
 	for _, c := range commits {
 		fmt.Printf("%s\t%-25s\t%s\t%s\n", c.Author.When.Format(time.DateTime),
-			c.Author.Name, c.Hash.String(), formatMessage(c.Message))
+			c.Author.Name, c.Hash.String(), utils.FormatMessage(c.Message))
 	}
 	return nil
 }
@@ -89,19 +90,4 @@ func (c *Log) GetCommits(repository git.Git) ([]*gitv5object.Commit, error) {
 		carryCommits = append(carryCommits, c)
 	}
 	return carryCommits, nil
-}
-
-// formatMessage trims message to fit in first line of commits message
-// or only the first 100 characters.
-func formatMessage(message string) string {
-	msg := strings.TrimSpace(message)
-	max := len(msg)
-	if max > 100 {
-		max = 100
-	}
-	newline := strings.Index(msg, "\n")
-	if newline > 0 && max > newline {
-		max = newline
-	}
-	return msg[:max]
 }
