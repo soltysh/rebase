@@ -1,4 +1,4 @@
-From 4b593db207edb8268b4d065de4a960c56c411433 Mon Sep 17 00:00:00 2001
+From a90c6b72b71a7141433b4f64221d811911ffecca Mon Sep 17 00:00:00 2001
 From: Michal Fojtik <mfojtik@redhat.com>
 Date: Thu, 29 Oct 2020 13:55:55 +0100
 Subject: [PATCH] UPSTREAM: <carry>: patch aggregator to allow delegating
