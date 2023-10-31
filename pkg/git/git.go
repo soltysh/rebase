@@ -174,7 +174,7 @@ func (git *git) runGit(args ...string) error {
 	return err
 }
 
-// CommitsByDate sorts a list of commits by date
+// CommitsByDate sorts a list of commits by commit date
 type CommitsByDate []*gitv5object.Commit
 
 func (s CommitsByDate) Len() int      { return len(s) }

@@ -89,5 +89,21 @@ func (c *Log) GetCommits(repository git.Git) ([]*gitv5object.Commit, error) {
 		}
 		carryCommits = append(carryCommits, c)
 	}
-	return carryCommits, nil
+
+	return deduplicateCommits(carryCommits), nil
+}
+
+// deduplicateCommits is responsible for dropping duplicate commits from the result list,
+// but without modifying the original order of commits
+func deduplicateCommits(commits []*gitv5object.Commit) []*gitv5object.Commit {
+	uniqueSha := make(map[string]bool)
+	var filteredCommits []*gitv5object.Commit
+	for _, c := range commits {
+		if _, exists := uniqueSha[c.Hash.String()]; exists {
+			continue
+		}
+		uniqueSha[c.Hash.String()] = true
+		filteredCommits = append(filteredCommits, c)
+	}
+	return filteredCommits
 }
