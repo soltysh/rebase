@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/openshift/rebase/pkg/carry"
 	"github.com/openshift/rebase/pkg/git"
+	"github.com/openshift/rebase/pkg/github"
 	"github.com/openshift/rebase/pkg/utils"
 	"k8s.io/klog/v2"
 )
@@ -20,6 +21,12 @@ type Apply struct {
 	from          string
 	repositoryDir string
 }
+
+const (
+	carryAction = "<carry>"
+	dropAction  = "<drop>"
+	skipPatch   = "<skip>"
+)
 
 var (
 	actionRE = regexp.MustCompile(`UPSTREAM: (?P<action>[<>\w]+):`)
@@ -54,18 +61,27 @@ func (c *Apply) Run() error {
 	for _, c := range commits {
 		klog.V(2).Infof("Processing %s: %q", c.Hash.String(), utils.FormatMessage(c.Message))
 		action := actionFromMessage(utils.FormatMessage(c.Message))
-		if _, err := strconv.Atoi(action); err == nil {
-			// TODO: upstream pick, for now handle as carry
-			action = "<carry>"
+		if number, err := strconv.Atoi(action); err == nil {
+			merged, err := github.IsMerged(number)
+			if err != nil {
+				// TODO: abort only after 2-3 errors, maybe?
+				return fmt.Errorf("Failed reading merge state for %s: %q: %w", c.Hash.String(), utils.FormatMessage(c.Message), err)
+			}
+			if merged {
+				klog.V(2).Infof("Skipping commit %s - merged upstream.", c.Hash.String())
+				continue
+			}
+			// in all other cases we just continue to carry a patch
+			action = carryAction
 		}
 		switch action {
-		case "<carry>":
+		case carryAction:
 			if err := carryFlow(repository, c); err != nil {
 				// TODO: abort only after 2-3 errors, maybe?
 				return err
 			}
-		case "<drop>":
-			klog.Infof("Dropping commit %s.", c.Hash.String())
+		case dropAction:
+			klog.Infof("Skipping drop commit %s.", c.Hash.String())
 		default:
 			klog.Infof("Unkown action on commit %s: %s", c.Hash.String(), action)
 		}
@@ -87,10 +103,14 @@ func carryFlow(repository git.Git, commit *object.Commit) error {
 		return err
 	}
 	klog.V(2).Infof("Looking for a fixed carry")
-	patch, err := findFixedCarry(commit.Hash.String())
+	patch, skip, err := findFixedCarry(commit.Hash.String())
 	if err != nil {
 		klog.Errorf("Carry https://github.com/openshift/kubernetes/commit/%s requires manual intervention!", commit.Hash.String())
 		return err
+	}
+	if skip {
+		klog.Infof("Found skip patch %s.", patch)
+		return nil
 	}
 	klog.Infof("Found %s, applying...", patch)
 	if err := repository.Apply(patch); err != nil {
@@ -111,15 +131,17 @@ func actionFromMessage(message string) string {
 }
 
 // findFixedCarry looks for fixed carry patches. Returns path to a file containing
-// the carry or error.
-func findFixedCarry(carrySha string) (string, error) {
+// the carry, information whether to skip it or not and an error.
+func findFixedCarry(carrySha string) (string, bool, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	carryPath := path.Join(cwd, "carries", carrySha)
-	if _, err := os.Stat(carryPath); err != nil {
-		return "", err
+	fileInfo, err := os.Stat(carryPath)
+	if err != nil {
+		return "", false, err
 	}
-	return carryPath, nil
+	// empty fixed carry informs the patch was mislabeled
+	return carryPath, fileInfo.Size() == 0, nil
 }
