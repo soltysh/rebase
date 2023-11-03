@@ -235,17 +235,17 @@ index d40c4282fed..eaa78728b4b 100644
 +++ b/cmd/kube-apiserver/app/options/options.go
 @@ -60,6 +60,8 @@ type Extra struct {
  	EndpointReconcilerType string
- 
+
  	MasterCount int
 +
 +	OpenShiftConfig string
  }
- 
+
  // NewServerRunOptions creates a new ServerRunOptions object with default parameters
 @@ -153,5 +155,9 @@ func (s *ServerRunOptions) Flags() (fss cliflag.NamedFlagSets) {
  		"The number of apiservers running in the cluster, must be a positive number. (In use when --endpoint-reconciler-type=master-count is enabled.)")
  	fs.MarkDeprecated("apiserver-count", "apiserver-count is deprecated and will be removed in a future version.")
- 
+
 +	fs.StringVar(&s.OpenShiftConfig, "openshift-config", s.OpenShiftConfig, "config for openshift")
 +	fs.MarkDeprecated("openshift-config", "to be removed")
 +	fs.MarkHidden("openshift-config")
@@ -259,18 +259,18 @@ index f8eefb7c7dd..460b93afc13 100644
 @@ -26,6 +26,10 @@ import (
  	"net/url"
  	"os"
- 
+
 +	"k8s.io/kubernetes/openshift-kube-apiserver/admission/admissionenablement"
 +	"k8s.io/kubernetes/openshift-kube-apiserver/enablement"
 +	"k8s.io/kubernetes/openshift-kube-apiserver/openshiftkubeapiserver"
 +
  	"github.com/spf13/cobra"
- 
+
  	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 @@ -103,6 +107,35 @@ cluster's shared state through which all other components interact.`,
  			}
  			cliflag.PrintFlags(fs)
- 
+
 +			if len(s.OpenShiftConfig) > 0 {
 +				// if we are running openshift, we modify the admission chain defaults accordingly
 +				admissionenablement.InstallOpenShiftAdmissionPlugins(s)
@@ -330,12 +330,12 @@ index 52eed984f43..a8a7ed96ec5 100644
 +
 +	"k8s.io/kubernetes/openshift-kube-apiserver/enablement"
  )
- 
+
  // BuildGenericConfig takes the master server options and produces the genericapiserver.Config associated with it
 @@ -134,6 +136,8 @@ func BuildGenericConfig(
  	// on a fast local network
  	genericConfig.LoopbackClientConfig.DisableCompression = true
- 
+
 +	enablement.SetLoopbackClientConfig(genericConfig.LoopbackClientConfig)
 +
  	kubeClientConfig := genericConfig.LoopbackClientConfig
@@ -359,7 +359,7 @@ index c33e2fa24d3..84f03469255 100644
 @@ -73,9 +77,11 @@ func (config Config) New() (authorizer.Authorizer, authorizer.RuleResolver, erro
  		ruleResolvers []authorizer.RuleResolver
  	)
- 
+
 -	// Add SystemPrivilegedGroup as an authorizing group
 -	superuserAuthorizer := authorizerfactory.NewPrivilegedGroups(user.SystemPrivilegedGroup)
 -	authorizers = append(authorizers, superuserAuthorizer)
@@ -368,7 +368,7 @@ index c33e2fa24d3..84f03469255 100644
 +		superuserAuthorizer := authorizerfactory.NewPrivilegedGroups(user.SystemPrivilegedGroup)
 +		authorizers = append(authorizers, superuserAuthorizer)
 +	}
- 
+
  	for _, configuredAuthorizer := range config.AuthorizationConfiguration.Authorizers {
  		// Keep cases in sync with constant list in k8s.io/kubernetes/pkg/kubeapiserver/authorizer/modes/modes.go.
 @@ -135,8 +141,16 @@ func (config Config) New() (authorizer.Authorizer, authorizer.RuleResolver, erro
@@ -379,11 +379,11 @@ index c33e2fa24d3..84f03469255 100644
 +			// Wrap with an authorizer that detects unsafe requests and modifies verbs/resources appropriately so policy can address them separately
 +			authorizers = append(authorizers, browsersafe.NewBrowserSafeAuthorizer(rbacAuthorizer, user.AllAuthenticated))
  			ruleResolvers = append(ruleResolvers, rbacAuthorizer)
-+		case modes.ModeScope:
++		case authzconfig.AuthorizerType(modes.ModeScope):
 +			// Wrap with an authorizer that detects unsafe requests and modifies verbs/resources appropriately so policy can address them separately
 +			scopeLimitedAuthorizer := scopeauthorizer.NewAuthorizer(config.VersionedInformerFactory.Rbac().V1().ClusterRoles().Lister())
 +			authorizers = append(authorizers, browsersafe.NewBrowserSafeAuthorizer(scopeLimitedAuthorizer, user.AllAuthenticated))
-+		case modes.ModeSystemMasters:
++		case authzconfig.AuthorizerType(modes.ModeSystemMasters):
 +			// no browsersafeauthorizer here becase that rewrites the resources.  This authorizer matches no matter which resource matches.
 +			authorizers = append(authorizers, authorizerfactory.NewPrivilegedGroups(user.SystemPrivilegedGroup))
  		default:
@@ -515,7 +515,7 @@ index 2e0dbdbaddf..c438cb04048 100644
 @@ -189,8 +189,8 @@ func NodeRules() []rbacv1.PolicyRule {
  	return nodePolicyRules
  }
- 
+
 -// ClusterRoles returns the cluster roles to bootstrap an API server with
 -func ClusterRoles() []rbacv1.ClusterRole {
 +// clusterRoles returns the cluster roles to bootstrap an API server with
@@ -525,7 +525,7 @@ index 2e0dbdbaddf..c438cb04048 100644
  			// a "root" role which can do absolutely anything
 @@ -601,7 +601,7 @@ func ClusterRoles() []rbacv1.ClusterRole {
  const systemNodeRoleName = "system:node"
- 
+
  // ClusterRoleBindings return default rolebindings to the default roles
 -func ClusterRoleBindings() []rbacv1.ClusterRoleBinding {
 +func clusterRoleBindings() []rbacv1.ClusterRoleBinding {
@@ -575,6 +575,6 @@ cq5WTi1h4&9N~zs>1ONd4{}&!zCjbxt0NQX<bN~PV
 literal 0
 HcmV?d00001
 
--- 
+--
 2.41.0
 

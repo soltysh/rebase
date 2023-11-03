@@ -1,4 +1,4 @@
-From 57832c8013dfb19dc0a67d3716cbadbb40a73e65 Mon Sep 17 00:00:00 2001
+From f0d82f0720d6631df9870b56cdeb51b47eb2fd09 Mon Sep 17 00:00:00 2001
 From: Lukasz Szaszkiewicz <lukasz.szaszkiewicz@gmail.com>
 Date: Thu, 4 Mar 2021 09:58:56 +0100
 Subject: [PATCH] UPSTREAM: <carry>: allows for switching KCM to talk to Kube
@@ -45,19 +45,19 @@ index a7112d003d4..38b64663b18 100644
 +	PreferredHostHealthMonitor          *health.Prober
  }
 diff --git a/cmd/kube-controller-manager/app/controllermanager.go b/cmd/kube-controller-manager/app/controllermanager.go
-index d8bbf312edb..666d4764ad8 100644
+index ae1311d5755..ef5060c6c4a 100644
 --- a/cmd/kube-controller-manager/app/controllermanager.go
 +++ b/cmd/kube-controller-manager/app/controllermanager.go
-@@ -77,6 +77,8 @@ import (
+@@ -76,6 +76,8 @@ import (
+ 	kubectrlmgrconfig "k8s.io/kubernetes/pkg/controller/apis/config"
  	serviceaccountcontroller "k8s.io/kubernetes/pkg/controller/serviceaccount"
- 	"k8s.io/kubernetes/pkg/features"
  	"k8s.io/kubernetes/pkg/serviceaccount"
 +
 +	libgorestclient "github.com/openshift/library-go/pkg/config/client"
  )
  
  func init() {
-@@ -136,6 +138,11 @@ controller, and serviceaccounts controller.`,
+@@ -135,6 +137,11 @@ controller, and serviceaccounts controller.`,
  			}
  			cliflag.PrintFlags(cmd.Flags())
  
@@ -69,7 +69,7 @@ index d8bbf312edb..666d4764ad8 100644
  			c, err := s.Config(KnownControllers(), ControllersDisabledByDefault(), ControllerAliases())
  			if err != nil {
  				return err
-@@ -206,6 +213,17 @@ func Run(ctx context.Context, c *config.CompletedConfig) error {
+@@ -205,6 +212,17 @@ func Run(ctx context.Context, c *config.CompletedConfig) error {
  		logger.Error(err, "Unable to register configz")
  	}
  
@@ -87,7 +87,7 @@ index d8bbf312edb..666d4764ad8 100644
  	// Setup any healthz checks we will want to use.
  	var checks []healthz.HealthChecker
  	var electionChecker *leaderelection.HealthzAdaptor
-@@ -836,7 +854,7 @@ func createClientBuilders(logger klog.Logger, c *config.CompletedConfig) (client
+@@ -833,7 +851,7 @@ func createClientBuilders(logger klog.Logger, c *config.CompletedConfig) (client
  		}
  
  		clientBuilder = clientbuilder.NewDynamicClientBuilder(

@@ -1,4 +1,4 @@
-From 87b059823bdb644b2f2faea6cb4ebdfdb7f2aaf1 Mon Sep 17 00:00:00 2001
+From 3b84f79d43e74b869c6f57e9c17e241858eb4bfd Mon Sep 17 00:00:00 2001
 From: Aravindh Puthiyaparambil <aravindh@redhat.com>
 Date: Wed, 12 Apr 2023 10:46:15 -0700
 Subject: [PATCH] UPSTREAM: <carry>: Extend NodeLogQuery feature
@@ -22,12 +22,12 @@ command. This was incorrectly being passed with the "since" value.
  7 files changed, 161 insertions(+), 41 deletions(-)
 
 diff --git a/pkg/features/kube_features.go b/pkg/features/kube_features.go
-index b1ff6aaf14b..297da6d516e 100644
+index 14996843620..f2a98644fdf 100644
 --- a/pkg/features/kube_features.go
 +++ b/pkg/features/kube_features.go
-@@ -1037,7 +1037,7 @@ var defaultKubernetesFeatureGates = map[featuregate.Feature]featuregate.FeatureS
+@@ -1128,7 +1128,7 @@ var defaultKubernetesFeatureGates = map[featuregate.Feature]featuregate.FeatureS
  
- 	NewVolumeManagerReconstruction: {Default: true, PreRelease: featuregate.Beta},
+ 	NFTablesProxyMode: {Default: false, PreRelease: featuregate.Alpha},
  
 -	NodeLogQuery: {Default: false, PreRelease: featuregate.Alpha},
 +	NodeLogQuery: {Default: true, PreRelease: featuregate.Alpha},
@@ -47,7 +47,7 @@ index 913c5dc3bdf..a4300014c5f 100644
  			return conf
  		},
 diff --git a/pkg/kubelet/kubelet.go b/pkg/kubelet/kubelet.go
-index f5735b83502..c3026c9284c 100644
+index 3b494893005..ac91b5e51e1 100644
 --- a/pkg/kubelet/kubelet.go
 +++ b/pkg/kubelet/kubelet.go
 @@ -1563,16 +1563,13 @@ func (kl *Kubelet) Run(updates <-chan kubetypes.PodUpdate) {

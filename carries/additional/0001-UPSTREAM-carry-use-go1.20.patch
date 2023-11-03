@@ -1,0 +1,518 @@
+From bd34a8dbf2d37db98c005d20b4606aff7cc53635 Mon Sep 17 00:00:00 2001
+From: Maciej Szulik <maszulik@redhat.com>
+Date: Tue, 31 Oct 2023 16:34:56 +0100
+Subject: [PATCH 1/2] UPSTREAM: <carry>: use go1.20
+
+---
+ go.mod                                            |  2 +-
+ hack/lib/golang.sh                                |  2 +-
+ staging/src/k8s.io/api/go.mod                     |  2 +-
+ staging/src/k8s.io/apiextensions-apiserver/go.mod |  2 +-
+ staging/src/k8s.io/apimachinery/go.mod            |  2 +-
+ staging/src/k8s.io/apiserver/go.mod               |  2 +-
+ staging/src/k8s.io/cli-runtime/go.mod             |  2 +-
+ staging/src/k8s.io/client-go/go.mod               |  2 +-
+ staging/src/k8s.io/cloud-provider/go.mod          |  2 +-
+ staging/src/k8s.io/cluster-bootstrap/go.mod       |  2 +-
+ staging/src/k8s.io/code-generator/examples/go.mod |  2 +-
+ staging/src/k8s.io/code-generator/go.mod          |  2 +-
+ staging/src/k8s.io/component-base/go.mod          |  2 +-
+ staging/src/k8s.io/component-helpers/go.mod       |  2 +-
+ staging/src/k8s.io/controller-manager/go.mod      |  2 +-
+ staging/src/k8s.io/cri-api/go.mod                 |  2 +-
+ staging/src/k8s.io/csi-translation-lib/go.mod     |  2 +-
+ .../src/k8s.io/dynamic-resource-allocation/go.mod |  2 +-
+ staging/src/k8s.io/endpointslice/go.mod           |  2 +-
+ staging/src/k8s.io/kms/go.mod                     |  2 +-
+ .../src/k8s.io/kms/internal/plugins/_mock/go.mod  |  2 +-
+ staging/src/k8s.io/kube-aggregator/go.mod         |  2 +-
+ staging/src/k8s.io/kube-controller-manager/go.mod |  2 +-
+ staging/src/k8s.io/kube-proxy/go.mod              |  2 +-
+ staging/src/k8s.io/kube-scheduler/go.mod          |  2 +-
+ staging/src/k8s.io/kubectl/go.mod                 |  2 +-
+ staging/src/k8s.io/kubelet/go.mod                 |  2 +-
+ staging/src/k8s.io/legacy-cloud-providers/go.mod  |  2 +-
+ staging/src/k8s.io/metrics/go.mod                 |  2 +-
+ staging/src/k8s.io/mount-utils/go.mod             |  2 +-
+ staging/src/k8s.io/pod-security-admission/go.mod  |  2 +-
+ staging/src/k8s.io/sample-apiserver/go.mod        |  2 +-
+ staging/src/k8s.io/sample-cli-plugin/go.mod       |  2 +-
+ staging/src/k8s.io/sample-controller/go.mod       |  2 +-
+ test/e2e/framework/ginkgowrapper.go               | 15 +++++++++++++--
+ 35 files changed, 47 insertions(+), 36 deletions(-)
+
+diff --git a/go.mod b/go.mod
+index 7d9ae8216fb..cf6f8f466a2 100644
+--- a/go.mod
++++ b/go.mod
+@@ -6,7 +6,7 @@
+ 
+ module k8s.io/kubernetes
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	bitbucket.org/bertimus9/systemstat v0.5.0
+diff --git a/hack/lib/golang.sh b/hack/lib/golang.sh
+index b353bbc06f2..5af5b40a34e 100755
+--- a/hack/lib/golang.sh
++++ b/hack/lib/golang.sh
+@@ -467,7 +467,7 @@ EOF
+   local go_version
+   IFS=" " read -ra go_version <<< "$(GOFLAGS='' go version)"
+   local minimum_go_version
+-  minimum_go_version=go1.21
++  minimum_go_version=go1.20
+   if [[ "${minimum_go_version}" != $(echo -e "${minimum_go_version}\n${go_version[2]}" | sort -s -t. -k 1,1 -k 2,2n -k 3,3n | head -n1) && "${go_version[2]}" != "devel" ]]; then
+     kube::log::usage_from_stdin <<EOF
+ Detected go version: ${go_version[*]}.
+diff --git a/staging/src/k8s.io/api/go.mod b/staging/src/k8s.io/api/go.mod
+index cb5126da1a0..f13cab1bd42 100644
+--- a/staging/src/k8s.io/api/go.mod
++++ b/staging/src/k8s.io/api/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/api
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/gogo/protobuf v1.3.2
+diff --git a/staging/src/k8s.io/apiextensions-apiserver/go.mod b/staging/src/k8s.io/apiextensions-apiserver/go.mod
+index 143d6a2d73f..5a288939ddb 100644
+--- a/staging/src/k8s.io/apiextensions-apiserver/go.mod
++++ b/staging/src/k8s.io/apiextensions-apiserver/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/apiextensions-apiserver
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/emicklei/go-restful/v3 v3.11.0
+diff --git a/staging/src/k8s.io/apimachinery/go.mod b/staging/src/k8s.io/apimachinery/go.mod
+index d5b419f263e..b8ba06dbebd 100644
+--- a/staging/src/k8s.io/apimachinery/go.mod
++++ b/staging/src/k8s.io/apimachinery/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/apimachinery
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
+diff --git a/staging/src/k8s.io/apiserver/go.mod b/staging/src/k8s.io/apiserver/go.mod
+index a41835b0b3b..cfb5a223433 100644
+--- a/staging/src/k8s.io/apiserver/go.mod
++++ b/staging/src/k8s.io/apiserver/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/apiserver
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/coreos/go-oidc v2.2.1+incompatible
+diff --git a/staging/src/k8s.io/cli-runtime/go.mod b/staging/src/k8s.io/cli-runtime/go.mod
+index 0198353ac09..8dc7236dd92 100644
+--- a/staging/src/k8s.io/cli-runtime/go.mod
++++ b/staging/src/k8s.io/cli-runtime/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/cli-runtime
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/evanphx/json-patch v4.12.0+incompatible
+diff --git a/staging/src/k8s.io/client-go/go.mod b/staging/src/k8s.io/client-go/go.mod
+index 3a35dcc5afb..48af6fc8a0c 100644
+--- a/staging/src/k8s.io/client-go/go.mod
++++ b/staging/src/k8s.io/client-go/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/client-go
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/evanphx/json-patch v4.12.0+incompatible
+diff --git a/staging/src/k8s.io/cloud-provider/go.mod b/staging/src/k8s.io/cloud-provider/go.mod
+index 0c85bf633e5..313119919b5 100644
+--- a/staging/src/k8s.io/cloud-provider/go.mod
++++ b/staging/src/k8s.io/cloud-provider/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/cloud-provider
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/google/go-cmp v0.6.0
+diff --git a/staging/src/k8s.io/cluster-bootstrap/go.mod b/staging/src/k8s.io/cluster-bootstrap/go.mod
+index 19618f80235..09ae3a2e301 100644
+--- a/staging/src/k8s.io/cluster-bootstrap/go.mod
++++ b/staging/src/k8s.io/cluster-bootstrap/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/cluster-bootstrap
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/stretchr/testify v1.8.4
+diff --git a/staging/src/k8s.io/code-generator/examples/go.mod b/staging/src/k8s.io/code-generator/examples/go.mod
+index 583f7f2d038..00844d5113a 100644
+--- a/staging/src/k8s.io/code-generator/examples/go.mod
++++ b/staging/src/k8s.io/code-generator/examples/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/code-generator/examples
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	k8s.io/api v0.0.0
+diff --git a/staging/src/k8s.io/code-generator/go.mod b/staging/src/k8s.io/code-generator/go.mod
+index 54096f0518f..ad3dd24577d 100644
+--- a/staging/src/k8s.io/code-generator/go.mod
++++ b/staging/src/k8s.io/code-generator/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/code-generator
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/gogo/protobuf v1.3.2
+diff --git a/staging/src/k8s.io/component-base/go.mod b/staging/src/k8s.io/component-base/go.mod
+index f705dbed455..75cafd09c8d 100644
+--- a/staging/src/k8s.io/component-base/go.mod
++++ b/staging/src/k8s.io/component-base/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/component-base
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/blang/semver/v4 v4.0.0
+diff --git a/staging/src/k8s.io/component-helpers/go.mod b/staging/src/k8s.io/component-helpers/go.mod
+index b9ffe28ac75..d59e6892273 100644
+--- a/staging/src/k8s.io/component-helpers/go.mod
++++ b/staging/src/k8s.io/component-helpers/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/component-helpers
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/google/go-cmp v0.6.0
+diff --git a/staging/src/k8s.io/controller-manager/go.mod b/staging/src/k8s.io/controller-manager/go.mod
+index 4d55da168b5..5f42b20d79c 100644
+--- a/staging/src/k8s.io/controller-manager/go.mod
++++ b/staging/src/k8s.io/controller-manager/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/controller-manager
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/spf13/pflag v1.0.5
+diff --git a/staging/src/k8s.io/cri-api/go.mod b/staging/src/k8s.io/cri-api/go.mod
+index 8cea0b9367e..1bc43f438a5 100644
+--- a/staging/src/k8s.io/cri-api/go.mod
++++ b/staging/src/k8s.io/cri-api/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/cri-api
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/gogo/protobuf v1.3.2
+diff --git a/staging/src/k8s.io/csi-translation-lib/go.mod b/staging/src/k8s.io/csi-translation-lib/go.mod
+index 3d7a9e64e03..966e68ce03b 100644
+--- a/staging/src/k8s.io/csi-translation-lib/go.mod
++++ b/staging/src/k8s.io/csi-translation-lib/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/csi-translation-lib
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/stretchr/testify v1.8.4
+diff --git a/staging/src/k8s.io/dynamic-resource-allocation/go.mod b/staging/src/k8s.io/dynamic-resource-allocation/go.mod
+index d5f2b290d47..7044c171d4a 100644
+--- a/staging/src/k8s.io/dynamic-resource-allocation/go.mod
++++ b/staging/src/k8s.io/dynamic-resource-allocation/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/dynamic-resource-allocation
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/go-logr/logr v1.2.4
+diff --git a/staging/src/k8s.io/endpointslice/go.mod b/staging/src/k8s.io/endpointslice/go.mod
+index 9100e0b7b79..b03fb57df33 100644
+--- a/staging/src/k8s.io/endpointslice/go.mod
++++ b/staging/src/k8s.io/endpointslice/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/endpointslice
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/davecgh/go-spew v1.1.1
+diff --git a/staging/src/k8s.io/kms/go.mod b/staging/src/k8s.io/kms/go.mod
+index 76ed4693a5c..0c6fb5e64d0 100644
+--- a/staging/src/k8s.io/kms/go.mod
++++ b/staging/src/k8s.io/kms/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/kms
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/gogo/protobuf v1.3.2
+diff --git a/staging/src/k8s.io/kms/internal/plugins/_mock/go.mod b/staging/src/k8s.io/kms/internal/plugins/_mock/go.mod
+index e5d7f5fdb79..c3db55194b1 100644
+--- a/staging/src/k8s.io/kms/internal/plugins/_mock/go.mod
++++ b/staging/src/k8s.io/kms/internal/plugins/_mock/go.mod
+@@ -1,6 +1,6 @@
+ module k8s.io/kms/plugins/mock
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/ThalesIgnite/crypto11 v1.2.5
+diff --git a/staging/src/k8s.io/kube-aggregator/go.mod b/staging/src/k8s.io/kube-aggregator/go.mod
+index 7df673df29b..49127afcb97 100644
+--- a/staging/src/k8s.io/kube-aggregator/go.mod
++++ b/staging/src/k8s.io/kube-aggregator/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/kube-aggregator
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/emicklei/go-restful/v3 v3.11.0
+diff --git a/staging/src/k8s.io/kube-controller-manager/go.mod b/staging/src/k8s.io/kube-controller-manager/go.mod
+index cc8eb1392e7..0c1af8c4221 100644
+--- a/staging/src/k8s.io/kube-controller-manager/go.mod
++++ b/staging/src/k8s.io/kube-controller-manager/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/kube-controller-manager
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	k8s.io/apimachinery v0.0.0
+diff --git a/staging/src/k8s.io/kube-proxy/go.mod b/staging/src/k8s.io/kube-proxy/go.mod
+index 2c8e128b1f8..124c8af60bb 100644
+--- a/staging/src/k8s.io/kube-proxy/go.mod
++++ b/staging/src/k8s.io/kube-proxy/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/kube-proxy
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	k8s.io/apimachinery v0.0.0
+diff --git a/staging/src/k8s.io/kube-scheduler/go.mod b/staging/src/k8s.io/kube-scheduler/go.mod
+index edd8022b106..0e27c6eb7a1 100644
+--- a/staging/src/k8s.io/kube-scheduler/go.mod
++++ b/staging/src/k8s.io/kube-scheduler/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/kube-scheduler
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/google/go-cmp v0.6.0
+diff --git a/staging/src/k8s.io/kubectl/go.mod b/staging/src/k8s.io/kubectl/go.mod
+index 61d51487ece..4c6a110cc1c 100644
+--- a/staging/src/k8s.io/kubectl/go.mod
++++ b/staging/src/k8s.io/kubectl/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/kubectl
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/MakeNowJust/heredoc v1.0.0
+diff --git a/staging/src/k8s.io/kubelet/go.mod b/staging/src/k8s.io/kubelet/go.mod
+index c618db00106..8d4c595ec59 100644
+--- a/staging/src/k8s.io/kubelet/go.mod
++++ b/staging/src/k8s.io/kubelet/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/kubelet
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/emicklei/go-restful/v3 v3.11.0
+diff --git a/staging/src/k8s.io/legacy-cloud-providers/go.mod b/staging/src/k8s.io/legacy-cloud-providers/go.mod
+index fe024751090..c9c6d08ec40 100644
+--- a/staging/src/k8s.io/legacy-cloud-providers/go.mod
++++ b/staging/src/k8s.io/legacy-cloud-providers/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/legacy-cloud-providers
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	cloud.google.com/go/compute/metadata v0.2.3
+diff --git a/staging/src/k8s.io/metrics/go.mod b/staging/src/k8s.io/metrics/go.mod
+index c372fa37ed3..c14e974dda3 100644
+--- a/staging/src/k8s.io/metrics/go.mod
++++ b/staging/src/k8s.io/metrics/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/metrics
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/gogo/protobuf v1.3.2
+diff --git a/staging/src/k8s.io/mount-utils/go.mod b/staging/src/k8s.io/mount-utils/go.mod
+index 3d4d02bfb93..9069108b6d4 100644
+--- a/staging/src/k8s.io/mount-utils/go.mod
++++ b/staging/src/k8s.io/mount-utils/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/mount-utils
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/moby/sys/mountinfo v0.6.2
+diff --git a/staging/src/k8s.io/pod-security-admission/go.mod b/staging/src/k8s.io/pod-security-admission/go.mod
+index ae1f2693f1b..900504d086f 100644
+--- a/staging/src/k8s.io/pod-security-admission/go.mod
++++ b/staging/src/k8s.io/pod-security-admission/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/pod-security-admission
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/blang/semver/v4 v4.0.0
+diff --git a/staging/src/k8s.io/sample-apiserver/go.mod b/staging/src/k8s.io/sample-apiserver/go.mod
+index 2c54f9319de..d2850350ea2 100644
+--- a/staging/src/k8s.io/sample-apiserver/go.mod
++++ b/staging/src/k8s.io/sample-apiserver/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/sample-apiserver
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/google/gofuzz v1.2.0
+diff --git a/staging/src/k8s.io/sample-cli-plugin/go.mod b/staging/src/k8s.io/sample-cli-plugin/go.mod
+index f92f82d3fff..f9f654deb1a 100644
+--- a/staging/src/k8s.io/sample-cli-plugin/go.mod
++++ b/staging/src/k8s.io/sample-cli-plugin/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/sample-cli-plugin
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	github.com/spf13/cobra v1.7.0
+diff --git a/staging/src/k8s.io/sample-controller/go.mod b/staging/src/k8s.io/sample-controller/go.mod
+index 3574ecd39a1..c5e29777bcd 100644
+--- a/staging/src/k8s.io/sample-controller/go.mod
++++ b/staging/src/k8s.io/sample-controller/go.mod
+@@ -2,7 +2,7 @@
+ 
+ module k8s.io/sample-controller
+ 
+-go 1.21.3
++go 1.20
+ 
+ require (
+ 	golang.org/x/time v0.3.0
+diff --git a/test/e2e/framework/ginkgowrapper.go b/test/e2e/framework/ginkgowrapper.go
+index 01d226a578b..b982280ca84 100644
+--- a/test/e2e/framework/ginkgowrapper.go
++++ b/test/e2e/framework/ginkgowrapper.go
+@@ -21,7 +21,6 @@ import (
+ 	"path"
+ 	"reflect"
+ 	"regexp"
+-	"slices"
+ 	"strings"
+ 
+ 	"github.com/onsi/ginkgo/v2"
+@@ -475,5 +474,17 @@ func TagsEqual(a, b interface{}) bool {
+ 	if al.extra != bl.extra {
+ 		return false
+ 	}
+-	return slices.Equal(al.parts, bl.parts)
++	return slicesEqual(al.parts, bl.parts)
++}
++
++func slicesEqual[S ~[]E, E comparable](s1, s2 S) bool {
++	if len(s1) != len(s2) {
++		return false
++	}
++	for i := range s1 {
++		if s1[i] != s2[i] {
++			return false
++		}
++	}
++	return true
+ }
+-- 
+2.41.0
+
