@@ -46,7 +46,9 @@ func (c *Apply) Run() error {
 	if err != nil {
 		return err
 	}
-	// TODO: add fetching remotes
+	// TODO:
+	// 1. add fetching remotes
+	// 2. checkout upstream/master and print its sha
 	commits, err := c.log.GetCommits(repository)
 	if err != nil {
 		return fmt.Errorf("Error reading carries: %w", err)
@@ -113,7 +115,12 @@ func carryFlow(repository git.Git, commit *object.Commit) error {
 		return nil
 	}
 	klog.Infof("Found %s, applying...", patch)
+	// TODO investigate using 3-way merge patch --3way flag for git am
 	if err := repository.Apply(patch); err != nil {
+		repository.AbortApply()
+		klog.Errorf("The current fix stopped working https://github.com/soltysh/rebase/tree/main/carries/%s and requires manual intervention!",
+			commit.Hash.String())
+		klog.Errorf("The original carry was https://github.com/openshift/kubernetes/commit/%s", commit.Hash.String())
 		return err
 	}
 	return nil

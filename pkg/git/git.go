@@ -16,6 +16,8 @@ import (
 type Git interface {
 	// AbortCherryPick aborts the current cherry-pick command
 	AbortCherryPick() error
+	// AbortApply aborts the current apply command
+	AbortApply() error
 	// Apply a patch
 	Apply(patch string) error
 	// Checkout the specified remote
@@ -152,6 +154,11 @@ func (git *git) AbortCherryPick() error {
 // Apply a patch
 func (git *git) Apply(patch string) error {
 	return git.runGit("am", patch)
+}
+
+// AbortApply a patch
+func (git *git) AbortApply() error {
+	return git.runGit("am", "--abort")
 }
 
 // Status prints current status of repository
