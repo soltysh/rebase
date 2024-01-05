@@ -83,9 +83,9 @@ func (c *Apply) Run() error {
 				return err
 			}
 		case dropAction:
-			klog.Infof("Skipping drop commit %s.", c.Hash.String())
+			klog.Warningf("Skipping drop commit %s.", c.Hash.String())
 		default:
-			klog.Infof("Unkown action on commit %s: %s", c.Hash.String(), action)
+			klog.Errorf("Unkown action on commit %s: %s", c.Hash.String(), action)
 		}
 	}
 	return nil
