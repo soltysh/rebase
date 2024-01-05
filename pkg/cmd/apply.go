@@ -16,14 +16,14 @@ func NewApplyCommand(streams options.IOStreams) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:          "apply --repository=/go/src/k8s.io/kubernetes --from=v1.26.0",
-		Short:        "Generates log of carry patches from a given version of kubernetes",
+		Short:        "Applies carry patches from a given version of kubernetes",
 		SilenceUsage: true,
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := o.Common.Complete(); err != nil {
 				return err
 			}
-			carrieslog := apply.NewApply(o.Common.From, o.Common.RepositoryDir)
-			return carrieslog.Run()
+			applyAction := apply.NewApply(o.Common.From, o.Common.RepositoryDir)
+			return applyAction.Run()
 		},
 	}
 	o.Common.AddFlags(cmd.Flags())

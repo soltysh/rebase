@@ -20,12 +20,16 @@ type Git interface {
 	AbortApply() error
 	// Apply a patch
 	Apply(patch string) error
+	// Apply a patch with 3-way merge
+	Apply3Way(patch string) error
 	// Checkout the specified remote
 	Checkout(remote string) error
 	// CreateBranch creates a named branch based on remote
 	CreateBranch(name, remote string) error
 	// CherryPick invokes the cherry-pick command
 	CherryPick(sha string) error
+	// RetryCherryPick invokes the cherry-pick command with recursive strategy and theirs option
+	RetryCherryPick(sha string) error
 	// Commit returns commit for a given has
 	Commit(hash plumbing.Hash) (*gitv5object.Commit, error)
 	// LogFromTag returns a list of carry commits from provided tag
@@ -146,6 +150,11 @@ func (git *git) CherryPick(sha string) error {
 	return git.runGit("cherry-pick", sha)
 }
 
+// RetryCherryPick invokes the cherry-pick command with recursive strategy and theirs option
+func (git *git) RetryCherryPick(sha string) error {
+	return git.runGit("cherry-pick", sha, "--strategy", "recursive", "--strategy-option", "theirs")
+}
+
 // AbortCherryPick invokes the cherry-pick command
 func (git *git) AbortCherryPick() error {
 	return git.runGit("cherry-pick", "--abort")
@@ -154,6 +163,11 @@ func (git *git) AbortCherryPick() error {
 // Apply a patch
 func (git *git) Apply(patch string) error {
 	return git.runGit("am", patch)
+}
+
+// Apply a patch with 3-way merge
+func (git *git) Apply3Way(patch string) error {
+	return git.runGit("am", "--3way", patch)
 }
 
 // AbortApply a patch
@@ -168,7 +182,6 @@ func (git *git) Status() error {
 }
 
 func (git *git) runGit(args ...string) error {
-	// cmd := exec.Command("git", "merge", "--strategy", "ours", remote, "--no-edit")
 	cmd := exec.Command("git", args...)
 	klog.V(2).Infof("Invoking %s...", cmd)
 	cmd.Dir = git.path

@@ -22,8 +22,8 @@ func NewCarriesCommand(streams options.IOStreams) *cobra.Command {
 			if err := o.Common.Complete(); err != nil {
 				return err
 			}
-			carrieslog := carry.NewLog(o.Common.From, o.Common.RepositoryDir)
-			return carrieslog.Run()
+			carriesAction := carry.NewLog(o.Common.From, o.Common.RepositoryDir)
+			return carriesAction.Run()
 		},
 	}
 	o.Common.AddFlags(cmd.Flags())

@@ -107,6 +107,15 @@ func carryFlow(repository git.Git, commit *object.Commit) error {
 	klog.V(2).Infof("Looking for a fixed carry")
 	patch, skip, err := findFixedCarry(commit.Hash.String())
 	if err != nil {
+		// if the cherry-pick failed and there's no fixed carry try using:
+		// git cherry-pick --strategy=recursive --strategy-option theirs
+		if err := repository.RetryCherryPick(commit.Hash.String()); err == nil {
+			klog.Warningf("Carry https://github.com/openshift/kubernetes/commit/%s was picked auto-magically \\o/ - make sure to double check it!", commit.Hash.String())
+			return nil
+		}
+		if err := repository.AbortCherryPick(); err != nil {
+			return err
+		}
 		klog.Errorf("Carry https://github.com/openshift/kubernetes/commit/%s requires manual intervention!", commit.Hash.String())
 		return err
 	}
@@ -115,9 +124,18 @@ func carryFlow(repository git.Git, commit *object.Commit) error {
 		return nil
 	}
 	klog.Infof("Found %s, applying...", patch)
-	// TODO investigate using 3-way merge patch --3way flag for git am
 	if err := repository.Apply(patch); err != nil {
-		repository.AbortApply()
+		if err := repository.AbortApply(); err != nil {
+			klog.Errorf("Aborting apply failed: %v", err)
+		}
+		// if the apply failed, try using 3-way merge before failing
+		if err := repository.Apply3Way(patch); err == nil {
+			klog.Warningf("Current fix https://github.com/soltysh/rebase/tree/main/carries/%s was picked auto-magically \\o/ - make sure to double check it!", commit.Hash.String())
+			return nil
+		}
+		if err := repository.AbortApply(); err != nil {
+			klog.Errorf("Aborting apply failed: %v", err)
+		}
 		klog.Errorf("The current fix stopped working https://github.com/soltysh/rebase/tree/main/carries/%s and requires manual intervention!",
 			commit.Hash.String())
 		klog.Errorf("The original carry was https://github.com/openshift/kubernetes/commit/%s", commit.Hash.String())
