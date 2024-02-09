@@ -1,0 +1,34 @@
+From df4e0708754b16effb70a518f66a838ec614da96 Mon Sep 17 00:00:00 2001
+From: Maciej Szulik <maszulik@redhat.com>
+Date: Fri, 5 Jan 2024 17:04:48 +0100
+Subject: [PATCH] UPSTREAM: <carry>: use host etcd
+
+---
+ hack/update-openapi-spec.sh | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/hack/update-openapi-spec.sh b/hack/update-openapi-spec.sh
+index 5d54f1acd18..a889ad33a35 100755
+--- a/hack/update-openapi-spec.sh
++++ b/hack/update-openapi-spec.sh
+@@ -28,7 +28,7 @@ source "${KUBE_ROOT}/hack/lib/init.sh"
+ 
+ kube::util::require-jq
+ kube::golang::setup_env
+-kube::etcd::install
++# kube::etcd::install
+ 
+ make -C "${KUBE_ROOT}" WHAT=cmd/kube-apiserver
+ 
+@@ -47,6 +47,8 @@ function cleanup()
+ 
+ trap cleanup EXIT SIGINT
+ 
++kube::golang::setup_env
++
+ TMP_DIR=${TMP_DIR:-$(kube::realpath "$(mktemp -d -t "$(basename "$0").XXXXXX")")}
+ ETCD_HOST=${ETCD_HOST:-127.0.0.1}
+ ETCD_PORT=${ETCD_PORT:-2379}
+-- 
+2.43.0
+
