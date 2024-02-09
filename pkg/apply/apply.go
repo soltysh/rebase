@@ -70,7 +70,7 @@ func (c *Apply) Run() error {
 				return fmt.Errorf("Failed reading merge state for %s: %q: %w", c.Hash.String(), utils.FormatMessage(c.Message), err)
 			}
 			if merged {
-				klog.V(2).Infof("Skipping commit %s - merged upstream.", c.Hash.String())
+				klog.V(1).Infof("Skipping commit %s - merged upstream.", c.Hash.String())
 				continue
 			}
 			// in all other cases we just continue to carry a patch
@@ -107,6 +107,7 @@ func carryFlow(repository git.Git, commit *object.Commit) error {
 	klog.V(2).Infof("Looking for a fixed carry")
 	patch, skip, err := findFixedCarry(commit.Hash.String())
 	if err != nil {
+		// TODO: it would be nice to get the problematic files listed here
 		// if the cherry-pick failed and there's no fixed carry try using:
 		// git cherry-pick --strategy=recursive --strategy-option theirs
 		if err := repository.RetryCherryPick(commit.Hash.String()); err == nil {
@@ -128,6 +129,7 @@ func carryFlow(repository git.Git, commit *object.Commit) error {
 		if err := repository.AbortApply(); err != nil {
 			klog.Errorf("Aborting apply failed: %v", err)
 		}
+		// TODO: it would be nice to get the problematic files listed here
 		// if the apply failed, try using 3-way merge before failing
 		if err := repository.Apply3Way(patch); err == nil {
 			klog.Warningf("Current fix https://github.com/soltysh/rebase/tree/main/carries/%s was picked auto-magically \\o/ - make sure to double check it!", commit.Hash.String())
