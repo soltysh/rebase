@@ -88,6 +88,18 @@ func (c *Apply) Run() error {
 			klog.Errorf("Unkown action on commit https://github.com/openshift/kubernetes/commit/%s: %s", c.Hash.String(), action)
 		}
 	}
+	additionalCarries, err := findAdditionalCarries()
+	if err != nil {
+		return fmt.Errorf("Error reading additional carries: %w", err)
+	}
+	for _, a := range additionalCarries {
+		klog.Infof("Found additional carry %s, applying...", a)
+		if err := repository.Apply(a); err != nil {
+			if err := repository.AbortApply(); err != nil {
+				klog.Errorf("Aborting apply failed: %v", err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -171,4 +183,26 @@ func findFixedCarry(carrySha string) (string, bool, error) {
 	}
 	// empty fixed carry informs the patch was mislabeled
 	return carryPath, fileInfo.Size() == 0, nil
+}
+
+// findAdditionalCarries looks for additional carry patches which need to be applied.
+// Returns a list of files containing the carries and error.
+func findAdditionalCarries() ([]string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	additionalPath := path.Join(cwd, "carries", "additional")
+	files, err := os.ReadDir(additionalPath)
+	if err != nil {
+		return nil, err
+	}
+	additionalCarries := []string{}
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		additionalCarries = append(additionalCarries, path.Join(additionalPath, file.Name()))
+	}
+	return additionalCarries, nil
 }
