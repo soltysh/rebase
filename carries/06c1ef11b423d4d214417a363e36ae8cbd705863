@@ -1,0 +1,239 @@
+From 012f0ff2a9d0447487093a58db4e4c66c66a5f83 Mon Sep 17 00:00:00 2001
+From: Talor Itzhak <titzhak@redhat.com>
+Date: Thu, 9 Nov 2023 13:55:08 +0200
+Subject: [PATCH] UPSTREAM: <carry>: advertise shared cpus for mixed cpus
+ feature
+
+Kubelet should advertise the shared cpus as extedned resources.
+This has the benefit of limiting the amount of containers
+that can request an access to the shared cpus.
+
+For more information see - https://github.com/openshift/enhancements/pull/1396
+
+Signed-off-by: Talor Itzhak <titzhak@redhat.com>
+---
+ pkg/kubelet/kubelet.go                    |  4 ++
+ pkg/kubelet/kubelet_node_status.go        | 22 ++++++
+ pkg/kubelet/sharedcpus/sharedcpus.go      | 87 +++++++++++++++++++++++
+ pkg/kubelet/sharedcpus/sharedcpus_test.go | 39 ++++++++++
+ 4 files changed, 152 insertions(+)
+ create mode 100644 pkg/kubelet/sharedcpus/sharedcpus.go
+ create mode 100644 pkg/kubelet/sharedcpus/sharedcpus_test.go
+
+diff --git a/pkg/kubelet/kubelet.go b/pkg/kubelet/kubelet.go
+index 7099391891a..aad8e4944a8 100644
+--- a/pkg/kubelet/kubelet.go
++++ b/pkg/kubelet/kubelet.go
+@@ -106,6 +106,7 @@ import (
+ 	"k8s.io/kubernetes/pkg/kubelet/server"
+ 	servermetrics "k8s.io/kubernetes/pkg/kubelet/server/metrics"
+ 	serverstats "k8s.io/kubernetes/pkg/kubelet/server/stats"
++	"k8s.io/kubernetes/pkg/kubelet/sharedcpus"
+ 	"k8s.io/kubernetes/pkg/kubelet/stats"
+ 	"k8s.io/kubernetes/pkg/kubelet/status"
+ 	"k8s.io/kubernetes/pkg/kubelet/sysctl"
+@@ -641,6 +642,9 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
+ 	if managed.IsEnabled() {
+ 		klog.InfoS("Pinned Workload Management Enabled")
+ 	}
++	if sharedcpus.IsEnabled() {
++		klog.InfoS("Mixed CPUs Workload Enabled")
++	}
+ 
+ 	if kubeDeps.KubeClient != nil {
+ 		klet.runtimeClassManager = runtimeclass.NewManager(kubeDeps.KubeClient)
+diff --git a/pkg/kubelet/kubelet_node_status.go b/pkg/kubelet/kubelet_node_status.go
+index 347ffc34189..d80fc86aea0 100644
+--- a/pkg/kubelet/kubelet_node_status.go
++++ b/pkg/kubelet/kubelet_node_status.go
+@@ -42,6 +42,7 @@ import (
+ 	"k8s.io/kubernetes/pkg/kubelet/events"
+ 	"k8s.io/kubernetes/pkg/kubelet/managed"
+ 	"k8s.io/kubernetes/pkg/kubelet/nodestatus"
++	"k8s.io/kubernetes/pkg/kubelet/sharedcpus"
+ 	taintutil "k8s.io/kubernetes/pkg/util/taints"
+ 	volutil "k8s.io/kubernetes/pkg/volume/util"
+ )
+@@ -122,6 +123,7 @@ func (kl *Kubelet) tryRegisterWithAPIServer(node *v1.Node) bool {
+ 	if managed.IsEnabled() {
+ 		requiresUpdate = kl.addManagementNodeCapacity(node, existingNode) || requiresUpdate
+ 	}
++	requiresUpdate = kl.reconcileSharedCPUsNodeCapacity(node, existingNode) || requiresUpdate
+ 	if requiresUpdate {
+ 		if _, _, err := nodeutil.PatchNodeStatus(kl.kubeClient.CoreV1(), types.NodeName(kl.nodeName), originalNode, existingNode); err != nil {
+ 			klog.ErrorS(err, "Unable to reconcile node with API server,error updating node", "node", klog.KObj(node))
+@@ -151,6 +153,25 @@ func (kl *Kubelet) addManagementNodeCapacity(initialNode, existingNode *v1.Node)
+ 	return true
+ }
+ 
++func (kl *Kubelet) reconcileSharedCPUsNodeCapacity(initialNode, existingNode *v1.Node) bool {
++	updateDefaultResources(initialNode, existingNode)
++	sharedCPUsResourceName := sharedcpus.GetResourceName()
++	// delete resources in case they exist and feature has been disabled
++	if !sharedcpus.IsEnabled() {
++		if _, ok := existingNode.Status.Capacity[sharedCPUsResourceName]; ok {
++			delete(existingNode.Status.Capacity, sharedCPUsResourceName)
++			return true
++		}
++		return false
++	}
++	q := resource.NewQuantity(sharedcpus.GetConfig().ContainersLimit, resource.DecimalSI)
++	if existingCapacity, ok := existingNode.Status.Capacity[sharedCPUsResourceName]; ok && existingCapacity.Equal(*q) {
++		return false
++	}
++	existingNode.Status.Capacity[sharedCPUsResourceName] = *q
++	return true
++}
++
+ // reconcileHugePageResource will update huge page capacity for each page size and remove huge page sizes no longer supported
+ func (kl *Kubelet) reconcileHugePageResource(initialNode, existingNode *v1.Node) bool {
+ 	requiresUpdate := updateDefaultResources(initialNode, existingNode)
+@@ -445,6 +466,7 @@ func (kl *Kubelet) initialNode(ctx context.Context) (*v1.Node, error) {
+ 	if managed.IsEnabled() {
+ 		kl.addManagementNodeCapacity(node, node)
+ 	}
++	kl.reconcileSharedCPUsNodeCapacity(node, node)
+ 
+ 	kl.setNodeStatus(ctx, node)
+ 
+diff --git a/pkg/kubelet/sharedcpus/sharedcpus.go b/pkg/kubelet/sharedcpus/sharedcpus.go
+new file mode 100644
+index 00000000000..ef4a35c476a
+--- /dev/null
++++ b/pkg/kubelet/sharedcpus/sharedcpus.go
+@@ -0,0 +1,87 @@
++/*
++Copyright 2023 The Kubernetes Authors.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++*/
++
++package sharedcpus
++
++import (
++	"encoding/json"
++	"errors"
++	"os"
++
++	corev1 "k8s.io/api/core/v1"
++	"k8s.io/klog/v2"
++)
++
++const (
++	configFileName         = "/etc/kubernetes/openshift-workload-mixed-cpus"
++	sharedCpusResourceName = "workload.openshift.io/enable-shared-cpus"
++)
++
++var (
++	config            Config
++	sharedCpusEnabled bool
++)
++
++type Config struct {
++	sharedCpus `json:"shared_cpus"`
++}
++
++type sharedCpus struct {
++	// ContainersLimit specify the number of containers that are allowed to access the shared CPU pool`
++	ContainersLimit int64 `json:"containers_limit"`
++}
++
++func init() {
++	parseConfig()
++}
++
++func IsEnabled() bool {
++	return sharedCpusEnabled
++}
++
++func GetResourceName() corev1.ResourceName {
++	return sharedCpusResourceName
++}
++
++func GetConfig() Config {
++	return config
++}
++
++func parseConfig() {
++	b, err := os.ReadFile(configFileName)
++	if err != nil {
++		if errors.Is(err, os.ErrNotExist) {
++			return
++		}
++		klog.ErrorS(err, "Failed to read configuration file for shared cpus", "fileName", configFileName)
++		return
++	}
++	cfg, err := parseConfigData(b)
++	if err != nil {
++		return
++	}
++	config = *cfg
++	sharedCpusEnabled = true
++}
++
++func parseConfigData(data []byte) (*Config, error) {
++	cfg := &Config{}
++	err := json.Unmarshal(data, cfg)
++	if err != nil {
++		klog.ErrorS(err, "Failed to parse configuration file for shared cpus", "fileContent", string(data))
++	}
++	return cfg, err
++}
+diff --git a/pkg/kubelet/sharedcpus/sharedcpus_test.go b/pkg/kubelet/sharedcpus/sharedcpus_test.go
+new file mode 100644
+index 00000000000..63e7914f0ff
+--- /dev/null
++++ b/pkg/kubelet/sharedcpus/sharedcpus_test.go
+@@ -0,0 +1,39 @@
++package sharedcpus
++
++import "testing"
++
++func TestParseConfigData(t *testing.T) {
++	testCases := []struct {
++		data                []byte
++		expectedToBeParsed  bool
++		containerLimitValue int64
++	}{
++		{
++			data: []byte(`{
++					"shared_cpus": {
++     					"containers_limit": 15
++					}
++				}`),
++			expectedToBeParsed:  true,
++			containerLimitValue: 15,
++		},
++		{
++			data: []byte(`{
++					"shared_cpus": {
++     					"abc": "25"
++  					}
++				}`),
++			expectedToBeParsed:  false,
++			containerLimitValue: 0,
++		},
++	}
++	for _, tc := range testCases {
++		cfg, err := parseConfigData(tc.data)
++		if err != nil && tc.expectedToBeParsed {
++			t.Errorf("shared cpus data expected to be parsed")
++		}
++		if cfg.ContainersLimit != tc.containerLimitValue {
++			t.Errorf("shared cpus ContainersLimit is different than expected: want: %d; got %d", tc.containerLimitValue, cfg.ContainersLimit)
++		}
++	}
++}
+-- 
+2.45.2
+

@@ -1,0 +1,259 @@
+From d153f34bccfbb7dd7424ec66799aecee086c6923 Mon Sep 17 00:00:00 2001
+From: "Dr. Stefan Schimanski" <stefan.schimanski@gmail.com>
+Date: Thu, 29 Oct 2020 13:55:57 +0100
+Subject: [PATCH] UPSTREAM: <carry>: kube-apiserver: wire through isTerminating
+ into handler chain
+
+UPSTREAM: <carry>: use lifeCycleSignals for isTerminating
+
+OpenShift-Rebase-Source: a736659ee67
+---
+ cmd/kube-scheduler/app/server.go              |  2 +-
+ pkg/kubelet/server/server.go                  |  2 +-
+ .../src/k8s.io/apiserver/pkg/server/config.go |  2 +-
+ .../pkg/server/filters/timeout_test.go        |  3 ++
+ .../apiserver/pkg/server/filters/wrap.go      |  4 +-
+ .../apiserver/pkg/server/httplog/httplog.go   | 24 +++++++++---
+ .../pkg/server/httplog/httplog_test.go        |  8 ++--
+ .../apiserver/pkg/server/patch_config.go      | 39 +++++++++++++++++++
+ .../k8s.io/controller-manager/app/serve.go    |  2 +-
+ 9 files changed, 70 insertions(+), 16 deletions(-)
+ create mode 100644 staging/src/k8s.io/apiserver/pkg/server/patch_config.go
+
+diff --git a/cmd/kube-scheduler/app/server.go b/cmd/kube-scheduler/app/server.go
+index dc9f8638f0f..bc3d1b8439f 100644
+--- a/cmd/kube-scheduler/app/server.go
++++ b/cmd/kube-scheduler/app/server.go
+@@ -283,7 +283,7 @@ func buildHandlerChain(handler http.Handler, authn authenticator.Request, authz
+ 	handler = genericapifilters.WithAuthentication(handler, authn, failedHandler, nil, nil)
+ 	handler = genericapifilters.WithRequestInfo(handler, requestInfoResolver)
+ 	handler = genericapifilters.WithCacheControl(handler)
+-	handler = genericfilters.WithHTTPLogging(handler)
++	handler = genericfilters.WithHTTPLogging(handler, nil)
+ 	handler = genericfilters.WithPanicRecovery(handler, requestInfoResolver)
+ 
+ 	return handler
+diff --git a/pkg/kubelet/server/server.go b/pkg/kubelet/server/server.go
+index 1c550a18789..1f7c4f8e89b 100644
+--- a/pkg/kubelet/server/server.go
++++ b/pkg/kubelet/server/server.go
+@@ -1064,7 +1064,7 @@ var statusesNoTracePred = httplog.StatusIsNot(
+ 
+ // ServeHTTP responds to HTTP requests on the Kubelet.
+ func (s *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+-	handler := httplog.WithLogging(s.restfulCont, statusesNoTracePred)
++	handler := httplog.WithLogging(s.restfulCont, statusesNoTracePred, nil)
+ 
+ 	// monitor http requests
+ 	var serverType string
+diff --git a/staging/src/k8s.io/apiserver/pkg/server/config.go b/staging/src/k8s.io/apiserver/pkg/server/config.go
+index 6f0ca1bcac4..5c99e167273 100644
+--- a/staging/src/k8s.io/apiserver/pkg/server/config.go
++++ b/staging/src/k8s.io/apiserver/pkg/server/config.go
+@@ -1046,7 +1046,7 @@ func DefaultBuildHandlerChain(apiHandler http.Handler, c *Config) http.Handler {
+ 	if c.ShutdownSendRetryAfter {
+ 		handler = genericfilters.WithRetryAfter(handler, c.lifecycleSignals.NotAcceptingNewRequest.Signaled())
+ 	}
+-	handler = genericfilters.WithHTTPLogging(handler)
++	handler = genericfilters.WithHTTPLogging(handler, c.newIsTerminatingFunc())
+ 	if c.FeatureGate.Enabled(genericfeatures.APIServerTracing) {
+ 		handler = genericapifilters.WithTracing(handler, c.TracerProvider)
+ 	}
+diff --git a/staging/src/k8s.io/apiserver/pkg/server/filters/timeout_test.go b/staging/src/k8s.io/apiserver/pkg/server/filters/timeout_test.go
+index ffb15926bd4..4f107450759 100644
+--- a/staging/src/k8s.io/apiserver/pkg/server/filters/timeout_test.go
++++ b/staging/src/k8s.io/apiserver/pkg/server/filters/timeout_test.go
+@@ -355,6 +355,9 @@ func TestTimeoutWithLogging(t *testing.T) {
+ 					},
+ 				),
+ 			),
++			func() bool {
++				return false
++			},
+ 		),
+ 	)
+ 	defer ts.Close()
+diff --git a/staging/src/k8s.io/apiserver/pkg/server/filters/wrap.go b/staging/src/k8s.io/apiserver/pkg/server/filters/wrap.go
+index 73ce2702604..1e48cd5b474 100644
+--- a/staging/src/k8s.io/apiserver/pkg/server/filters/wrap.go
++++ b/staging/src/k8s.io/apiserver/pkg/server/filters/wrap.go
+@@ -59,8 +59,8 @@ func WithPanicRecovery(handler http.Handler, resolver request.RequestInfoResolve
+ }
+ 
+ // WithHTTPLogging enables logging of incoming requests.
+-func WithHTTPLogging(handler http.Handler) http.Handler {
+-	return httplog.WithLogging(handler, httplog.DefaultStacktracePred)
++func WithHTTPLogging(handler http.Handler, isTerminating func() bool) http.Handler {
++	return httplog.WithLogging(handler, httplog.DefaultStacktracePred, isTerminating)
+ }
+ 
+ func withPanicRecovery(handler http.Handler, crashHandler func(http.ResponseWriter, *http.Request, interface{})) http.Handler {
+diff --git a/staging/src/k8s.io/apiserver/pkg/server/httplog/httplog.go b/staging/src/k8s.io/apiserver/pkg/server/httplog/httplog.go
+index a4b4c5899fd..dcfc736bc81 100644
+--- a/staging/src/k8s.io/apiserver/pkg/server/httplog/httplog.go
++++ b/staging/src/k8s.io/apiserver/pkg/server/httplog/httplog.go
+@@ -66,6 +66,7 @@ type respLogger struct {
+ 	addedInfo          strings.Builder
+ 	addedKeyValuePairs []interface{}
+ 	startTime          time.Time
++	isTerminating      bool
+ 
+ 	captureErrorOutput bool
+ 
+@@ -99,13 +100,13 @@ func DefaultStacktracePred(status int) bool {
+ const withLoggingLevel = 3
+ 
+ // WithLogging wraps the handler with logging.
+-func WithLogging(handler http.Handler, pred StacktracePred) http.Handler {
++func WithLogging(handler http.Handler, pred StacktracePred, isTerminatingFn func() bool) http.Handler {
+ 	return withLogging(handler, pred, func() bool {
+ 		return klog.V(withLoggingLevel).Enabled()
+-	})
++	}, isTerminatingFn)
+ }
+ 
+-func withLogging(handler http.Handler, stackTracePred StacktracePred, shouldLogRequest ShouldLogRequestPred) http.Handler {
++func withLogging(handler http.Handler, stackTracePred StacktracePred, shouldLogRequest ShouldLogRequestPred, isTerminatingFn func() bool) http.Handler {
+ 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+ 		if !shouldLogRequest() {
+ 			handler.ServeHTTP(w, req)
+@@ -116,17 +117,22 @@ func withLogging(handler http.Handler, stackTracePred StacktracePred, shouldLogR
+ 		if old := respLoggerFromRequest(req); old != nil {
+ 			panic("multiple WithLogging calls!")
+ 		}
+-
+ 		startTime := time.Now()
+ 		if receivedTimestamp, ok := request.ReceivedTimestampFrom(ctx); ok {
+ 			startTime = receivedTimestamp
+ 		}
+ 
+-		rl := newLoggedWithStartTime(req, w, startTime)
+-		rl.StacktraceWhen(stackTracePred)
++		isTerminating := false
++		if isTerminatingFn != nil {
++			isTerminating = isTerminatingFn()
++		}
++		rl := newLoggedWithStartTime(req, w, startTime).StacktraceWhen(stackTracePred).IsTerminating(isTerminating)
+ 		req = req.WithContext(context.WithValue(ctx, respLoggerContextKey, rl))
+ 		defer rl.Log()
+ 
++		if klog.V(3).Enabled() || (rl.isTerminating && klog.V(1).Enabled()) {
++			defer rl.Log()
++		}
+ 		w = responsewriter.WrapForHTTP1Or2(rl)
+ 		handler.ServeHTTP(w, req)
+ 	})
+@@ -188,6 +194,12 @@ func (rl *respLogger) StacktraceWhen(pred StacktracePred) *respLogger {
+ 	return rl
+ }
+ 
++// IsTerminating informs the logger that the server is terminating.
++func (rl *respLogger) IsTerminating(is bool) *respLogger {
++	rl.isTerminating = is
++	return rl
++}
++
+ // StatusIsNot returns a StacktracePred which will cause stacktraces to be logged
+ // for any status *not* in the given list.
+ func StatusIsNot(statuses ...int) StacktracePred {
+diff --git a/staging/src/k8s.io/apiserver/pkg/server/httplog/httplog_test.go b/staging/src/k8s.io/apiserver/pkg/server/httplog/httplog_test.go
+index 113825ac0b0..61b83c8c975 100644
+--- a/staging/src/k8s.io/apiserver/pkg/server/httplog/httplog_test.go
++++ b/staging/src/k8s.io/apiserver/pkg/server/httplog/httplog_test.go
+@@ -67,7 +67,7 @@ func TestWithLogging(t *testing.T) {
+ 	shouldLogRequest := func() bool { return true }
+ 	var handler http.Handler
+ 	handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+-	handler = withLogging(withLogging(handler, DefaultStacktracePred, shouldLogRequest), DefaultStacktracePred, shouldLogRequest)
++	handler = withLogging(withLogging(handler, DefaultStacktracePred, shouldLogRequest, nil), DefaultStacktracePred, shouldLogRequest, nil)
+ 
+ 	func() {
+ 		defer func() {
+@@ -111,7 +111,7 @@ func TestLogOf(t *testing.T) {
+ 					t.Errorf("Expected %v, got %v", test.want, got)
+ 				}
+ 			})
+-			handler = withLogging(handler, DefaultStacktracePred, func() bool { return test.shouldLogRequest })
++			handler = withLogging(handler, DefaultStacktracePred, func() bool { return test.shouldLogRequest }, nil)
+ 			w := httptest.NewRecorder()
+ 			handler.ServeHTTP(w, req)
+ 		})
+@@ -135,7 +135,7 @@ func TestUnlogged(t *testing.T) {
+ 			}
+ 		})
+ 		if makeLogger {
+-			handler = WithLogging(handler, DefaultStacktracePred)
++			handler = WithLogging(handler, DefaultStacktracePred, nil)
+ 		}
+ 
+ 		handler.ServeHTTP(origWriter, req)
+@@ -216,7 +216,7 @@ func TestRespLoggerWithDecoratedResponseWriter(t *testing.T) {
+ 				}
+ 			})
+ 
+-			handler = withLogging(handler, DefaultStacktracePred, func() bool { return true })
++			handler = withLogging(handler, DefaultStacktracePred, func() bool { return true }, nil)
+ 			handler.ServeHTTP(test.r(), req)
+ 		})
+ 	}
+diff --git a/staging/src/k8s.io/apiserver/pkg/server/patch_config.go b/staging/src/k8s.io/apiserver/pkg/server/patch_config.go
+new file mode 100644
+index 00000000000..13fca93d6ca
+--- /dev/null
++++ b/staging/src/k8s.io/apiserver/pkg/server/patch_config.go
+@@ -0,0 +1,39 @@
++/*
++Copyright 2021 The Kubernetes Authors.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++*/
++
++package server
++
++// newIsTerminatingFunc returns a 'func() bool' that relies on the
++// 'ShutdownInitiated' life cycle signal of answer if the apiserver
++// has started the termination process.
++func (c *Config) newIsTerminatingFunc() func() bool {
++	var shutdownCh <-chan struct{}
++	// TODO: a properly initialized Config object should always have lifecycleSignals
++	//  initialized, but some config unit tests leave lifecycleSignals as nil.
++	//  Fix the unit tests upstream and then we can remove this check.
++	if c.lifecycleSignals.ShutdownInitiated != nil {
++		shutdownCh = c.lifecycleSignals.ShutdownInitiated.Signaled()
++	}
++
++	return func() bool {
++		select {
++		case <-shutdownCh:
++			return true
++		default:
++			return false
++		}
++	}
++}
+diff --git a/staging/src/k8s.io/controller-manager/app/serve.go b/staging/src/k8s.io/controller-manager/app/serve.go
+index 0f1e1fec60e..2a99efbddab 100644
+--- a/staging/src/k8s.io/controller-manager/app/serve.go
++++ b/staging/src/k8s.io/controller-manager/app/serve.go
+@@ -48,7 +48,7 @@ func BuildHandlerChain(apiHandler http.Handler, authorizationInfo *apiserver.Aut
+ 	}
+ 	handler = genericapifilters.WithRequestInfo(handler, requestInfoResolver)
+ 	handler = genericapifilters.WithCacheControl(handler)
+-	handler = genericfilters.WithHTTPLogging(handler)
++	handler = genericfilters.WithHTTPLogging(handler, nil)
+ 	handler = genericfilters.WithPanicRecovery(handler, requestInfoResolver)
+ 
+ 	return handler
+-- 
+2.45.2
+

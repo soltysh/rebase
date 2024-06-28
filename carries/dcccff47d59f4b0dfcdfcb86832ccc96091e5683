@@ -1,0 +1,103 @@
+From 5df8ebc042f5a83c9bf84d115eebb576cc53e72a Mon Sep 17 00:00:00 2001
+From: "Dr. Stefan Schimanski" <stefan.schimanski@gmail.com>
+Date: Thu, 29 Oct 2020 13:55:58 +0100
+Subject: [PATCH] UPSTREAM: <carry>: warn only about unknown feature
+ gates
+
+OpenShift-Rebase-Source: a1370096b39
+---
+ .../pkg/util/version/registry_test.go          |  2 +-
+ .../component-base/featuregate/feature_gate.go |  5 ++---
+ .../featuregate/feature_gate_test.go           | 18 +++++++++++-------
+ 3 files changed, 14 insertions(+), 11 deletions(-)
+
+diff --git a/staging/src/k8s.io/apiserver/pkg/util/version/registry_test.go b/staging/src/k8s.io/apiserver/pkg/util/version/registry_test.go
+index 1badd5344d2..aceac3c3eef 100644
+--- a/staging/src/k8s.io/apiserver/pkg/util/version/registry_test.go
++++ b/staging/src/k8s.io/apiserver/pkg/util/version/registry_test.go
+@@ -261,7 +261,7 @@ func TestFlags(t *testing.T) {
+ 				"--emulated-version=test=2.7",
+ 				"--feature-gates=test:testD=true",
+ 			},
+-			parseError: "unrecognized feature gate: testD",
++			// parseError: "unrecognized feature gate: testD",
+ 		},
+ 		{
+ 			name: "setting unknown component feature flag",
+diff --git a/staging/src/k8s.io/component-base/featuregate/feature_gate.go b/staging/src/k8s.io/component-base/featuregate/feature_gate.go
+index e3ca5e91dae..5bd9f389f58 100644
+--- a/staging/src/k8s.io/component-base/featuregate/feature_gate.go
++++ b/staging/src/k8s.io/component-base/featuregate/feature_gate.go
+@@ -325,9 +325,8 @@ func (f *featureGate) unsafeSetFromMap(enabled map[Feature]bool, m map[string]bo
+ 		key := Feature(k)
+ 		versionedSpecs, ok := known[key]
+ 		if !ok {
+-			// early return if encounters an unknown feature.
+-			errs = append(errs, fmt.Errorf("unrecognized feature gate: %s", k))
+-			return errs
++			klog.Warningf("unrecognized feature gate: %s", k)
++			continue
+ 		}
+ 		featureSpec := featureSpecAtEmulationVersion(versionedSpecs, emulationVersion)
+ 		if featureSpec.LockToDefault && featureSpec.Default != v {
+diff --git a/staging/src/k8s.io/component-base/featuregate/feature_gate_test.go b/staging/src/k8s.io/component-base/featuregate/feature_gate_test.go
+index cd6eeb83ecb..fed7063d836 100644
+--- a/staging/src/k8s.io/component-base/featuregate/feature_gate_test.go
++++ b/staging/src/k8s.io/component-base/featuregate/feature_gate_test.go
+@@ -88,7 +88,7 @@ func TestFeatureGateFlag(t *testing.T) {
+ 				testBetaGate:        false,
+ 				testLockedFalseGate: false,
+ 			},
+-			parseError: "unrecognized feature gate: fooBarBaz",
++			//parseError: "unrecognized feature gate: fooBarBaz",
+ 		},
+ 		{
+ 			arg: "AllAlpha=false",
+@@ -417,7 +417,7 @@ func TestFeatureGateSetFromMap(t *testing.T) {
+ 				testAlphaGate: false,
+ 				testBetaGate:  false,
+ 			},
+-			setmapError: "unrecognized feature gate:",
++			//setmapError: "unrecognized feature gate:",
+ 		},
+ 		{
+ 			name: "set locked gates",
+@@ -751,7 +751,7 @@ func TestVersionedFeatureGateFlag(t *testing.T) {
+ 				testAlphaGateNoVersion: false,
+ 				testBetaGateNoVersion:  false,
+ 			},
+-			parseError: "unrecognized feature gate: fooBarBaz",
++			// parseError: "unrecognized feature gate: fooBarBaz",
+ 		},
+ 		{
+ 			arg: "AllAlpha=false",
+@@ -1034,8 +1034,12 @@ func TestVersionedFeatureGateFlag(t *testing.T) {
+ 				errs = append(errs, err)
+ 			}
+ 			err = utilerrors.NewAggregate(errs)
++			strErr := ""
++			if err != nil {
++				strErr = err.Error()
++			}
+ 			if test.parseError != "" {
+-				if !strings.Contains(err.Error(), test.parseError) {
++				if !strings.Contains(strErr, test.parseError) {
+ 					t.Errorf("%d: Parse() Expected %v, Got %v", i, test.parseError, err)
+ 				}
+ 				return
+@@ -1549,9 +1553,9 @@ func TestCopyKnownFeatures(t *testing.T) {
+ 	require.NoError(t, fcopy.Set("FeatureB=false"))
+ 	assert.True(t, f.Enabled("FeatureB"))
+ 	assert.False(t, fcopy.Enabled("FeatureB"))
+-	if err := fcopy.Set("FeatureC=true"); err == nil {
+-		t.Error("expected FeatureC not registered in the copied feature gate")
+-	}
++	// if err := fcopy.Set("FeatureC=true"); err == nil {
++	// 	t.Error("expected FeatureC not registered in the copied feature gate")
++	// }
+ }
+
+ func TestExplicitlySet(t *testing.T) {
+--
+2.45.2
+

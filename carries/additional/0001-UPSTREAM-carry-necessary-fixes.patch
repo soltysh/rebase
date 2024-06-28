@@ -1,0 +1,58 @@
+From 2ac961b9f744f6e6a34f6b5dda3c97cef6092759 Mon Sep 17 00:00:00 2001
+From: Maciej Szulik <maszulik@redhat.com>
+Date: Mon, 1 Jul 2024 15:29:44 +0200
+Subject: [PATCH] UPSTREAM: <carry>: necessary fixes
+
+---
+ openshift-hack/e2e/include.go                                 | 2 +-
+ .../admission/admissionenablement/admission.go                | 4 +---
+ .../admission/admissionenablement/register.go                 | 2 +-
+ 3 files changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/openshift-hack/e2e/include.go b/openshift-hack/e2e/include.go
+index 3275a49bfc1..cbf2ad8f164 100644
+--- a/openshift-hack/e2e/include.go
++++ b/openshift-hack/e2e/include.go
+@@ -19,5 +19,5 @@ import (
+ 	_ "k8s.io/kubernetes/test/e2e/node"
+ 	_ "k8s.io/kubernetes/test/e2e/scheduling"
+ 	_ "k8s.io/kubernetes/test/e2e/storage"
+-	_ "k8s.io/kubernetes/test/e2e/storage/csi_mock"
++	_ "k8s.io/kubernetes/test/e2e/storage/csimock"
+ )
+diff --git a/openshift-kube-apiserver/admission/admissionenablement/admission.go b/openshift-kube-apiserver/admission/admissionenablement/admission.go
+index 9ad1b1e7fb5..a701f6d285c 100644
+--- a/openshift-kube-apiserver/admission/admissionenablement/admission.go
++++ b/openshift-kube-apiserver/admission/admissionenablement/admission.go
+@@ -1,8 +1,6 @@
+ package admissionenablement
+ 
+ import (
+-	"k8s.io/apimachinery/pkg/util/sets"
+-
+ 	"k8s.io/kubernetes/cmd/kube-apiserver/app/options"
+ 	"k8s.io/kubernetes/openshift-kube-apiserver/admission/customresourcevalidation/customresourcevalidationregistration"
+ )
+@@ -13,5 +11,5 @@ func InstallOpenShiftAdmissionPlugins(o *options.ServerRunOptions) {
+ 	RegisterOpenshiftKubeAdmissionPlugins(o.Admission.GenericAdmission.Plugins)
+ 	customresourcevalidationregistration.RegisterCustomResourceValidation(o.Admission.GenericAdmission.Plugins)
+ 	existingDefaultOff := o.Admission.GenericAdmission.DefaultOffPlugins
+-	o.Admission.GenericAdmission.DefaultOffPlugins = sets.StringKeySet(NewDefaultOffPluginsFunc(existingDefaultOff)())
++	o.Admission.GenericAdmission.DefaultOffPlugins = NewDefaultOffPluginsFunc(existingDefaultOff)()
+ }
+diff --git a/openshift-kube-apiserver/admission/admissionenablement/register.go b/openshift-kube-apiserver/admission/admissionenablement/register.go
+index 296c593cb7c..e04020266b8 100644
+--- a/openshift-kube-apiserver/admission/admissionenablement/register.go
++++ b/openshift-kube-apiserver/admission/admissionenablement/register.go
+@@ -113,7 +113,7 @@ func NewOrderedKubeAdmissionPlugins(kubeAdmissionOrder []string) []string {
+ 	return ret
+ }
+ 
+-func NewDefaultOffPluginsFunc(kubeDefaultOffAdmission sets.String) func() sets.Set[string] {
++func NewDefaultOffPluginsFunc(kubeDefaultOffAdmission sets.Set[string]) func() sets.Set[string] {
+ 	return func() sets.Set[string] {
+ 		kubeOff := sets.New[string](kubeDefaultOffAdmission.UnsortedList()...)
+ 		kubeOff.Delete(additionalDefaultOnPlugins.List()...)
+-- 
+2.45.2
+

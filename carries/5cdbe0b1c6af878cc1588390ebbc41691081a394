@@ -1,0 +1,92 @@
+From 3f64e4cf17036294cedf31db81f5d149e9e71204 Mon Sep 17 00:00:00 2001
+From: "Dr. Stefan Schimanski" <stefan.schimanski@gmail.com>
+Date: Mon, 8 Feb 2021 18:04:54 +0100
+Subject: [PATCH] UPSTREAM: <carry>: kube-apiserver: ignore SIGTERM/INT after
+ the first one
+
+UPSTREAM: <carry>: kube-apiserver: set up separate signal handler functions to ignore further signals
+
+This patches the changes from https://github.com/openshift/kubernetes/pull/558 to provide
+these new functions without changing the behavior for other repos that depend on them, such
+as library-go.
+
+OpenShift-Rebase-Source: 63ed2006a96
+---
+ cmd/kube-apiserver/app/server.go              |  2 +-
+ .../src/k8s.io/apiserver/pkg/server/signal.go | 29 +++++++++++++++++--
+ 2 files changed, 28 insertions(+), 3 deletions(-)
+
+diff --git a/cmd/kube-apiserver/app/server.go b/cmd/kube-apiserver/app/server.go
+index 5fcccd80886..177530747d8 100644
+--- a/cmd/kube-apiserver/app/server.go
++++ b/cmd/kube-apiserver/app/server.go
+@@ -152,7 +152,7 @@ cluster's shared state through which all other components interact.`,
+ 			return nil
+ 		},
+ 	}
+-	cmd.SetContext(genericapiserver.SetupSignalContext())
++	cmd.SetContext(genericapiserver.SetupSignalContextNotExiting())
+ 
+ 	fs := cmd.Flags()
+ 	namedFlagSets := s.Flags()
+diff --git a/staging/src/k8s.io/apiserver/pkg/server/signal.go b/staging/src/k8s.io/apiserver/pkg/server/signal.go
+index e5334ae4c15..bdd2728f8ab 100644
+--- a/staging/src/k8s.io/apiserver/pkg/server/signal.go
++++ b/staging/src/k8s.io/apiserver/pkg/server/signal.go
+@@ -20,6 +20,8 @@ import (
+ 	"context"
+ 	"os"
+ 	"os/signal"
++
++	"k8s.io/klog/v2"
+ )
+ 
+ var onlyOneSignalHandler = make(chan struct{})
+@@ -34,10 +36,26 @@ func SetupSignalHandler() <-chan struct{} {
+ 	return SetupSignalContext().Done()
+ }
+ 
++// SetupSignalHandlerIgnoringFurtherSignals is the same as SetupSignalContext, except
++// it ignores further exit signals after receiving the first one.
++func SetupSignalHandlerIgnoringFurtherSignals() <-chan struct{} {
++	return SetupSignalContextNotExiting().Done()
++}
++
+ // SetupSignalContext is same as SetupSignalHandler, but a context.Context is returned.
+ // Only one of SetupSignalContext and SetupSignalHandler should be called, and only can
+ // be called once.
+ func SetupSignalContext() context.Context {
++	return setupSignalContext(true)
++}
++
++// SetupSignalContextNotExiting is the same as SetupSignalContext, except
++// it ignores further exit signals after receiving the first one.
++func SetupSignalContextNotExiting() context.Context {
++	return setupSignalContext(false)
++}
++
++func setupSignalContext(exitOnSecondSignal bool) context.Context {
+ 	close(onlyOneSignalHandler) // panics when called twice
+ 
+ 	shutdownHandler = make(chan os.Signal, 2)
+@@ -47,8 +65,15 @@ func SetupSignalContext() context.Context {
+ 	go func() {
+ 		<-shutdownHandler
+ 		cancel()
+-		<-shutdownHandler
+-		os.Exit(1) // second signal. Exit directly.
++		if exitOnSecondSignal {
++			<-shutdownHandler
++			os.Exit(1)
++		} else {
++			for {
++				<-shutdownHandler
++				klog.Infof("Termination signal has been received already. Ignoring signal.")
++			}
++		}
+ 	}()
+ 
+ 	return ctx
+-- 
+2.45.2
+

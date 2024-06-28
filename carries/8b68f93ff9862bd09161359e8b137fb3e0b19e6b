@@ -1,0 +1,605 @@
+From 307638cb48d7a75d31bcde3501d8c9ba707505be Mon Sep 17 00:00:00 2001
+From: David Eads <deads@redhat.com>
+Date: Thu, 29 Oct 2020 13:55:56 +0100
+Subject: [PATCH] UPSTREAM: <carry>: openshift-kube-apiserver: add
+ kube-apiserver patches
+
+UPSTREAM: <carry>: openshift-kube-apiserver: enabled conversion gen for admission configs
+
+UPSTREAM: <carry>: openshift-kube-apiserver/admission: fix featuregates resource name
+
+UPSTREAM: <carry>: openshift-kube-apiserver/admission: add missing FeatureSets
+
+UPSTREAM: <carry>: openshift-kube-apiserver: use github.com/openshift/apiserver-library-go/pkg/labelselector
+
+UPSTREAM: <carry>: openshift authenticator: don't allow old-style tokens
+
+UPSTREAM: <carry>: oauth-authn: support sha256 prefixed tokens
+
+UPSTREAM: <carry>: oauth-token-authn: switch to sha256~ prefix
+
+UPSTREAM: <carry>: oauth-token-authn: add sha256~ support to bootstrap authenticator
+
+UPSTREAM: <drop>: remove the openshift authenticator from the apiserver
+
+In 4.8, we moved the authenticator to be configured via
+webhookTokenAuthenticators to an endpoint in the oauth-apiserver,
+this should now be safe to remove.
+
+UPSTREAM: <carry>: set ResourceQuotaValidationOptions to true
+
+When PodAffinityNamespaceSelector goes to beta or GA this might affect
+how our ClusterResourceQuota might work
+
+UPSTREAM: <carry>: simplify the authorizer patch to allow the flags to function
+
+UPSTREAM: <carry>: eliminate unnecessary closure in openshift configuration wiring
+
+UPSTREAM: <carry>: add crdvalidation for apiserver.spec.tlsSecurityProfile
+
+UPSTREAM: <carry>: openshift-kube-apiserver: Add custom resource validation for network spec
+
+UPSTREAM: <carry>: stop overriding flags that are explicitly set
+
+UPSTREAM: <carry>: add readyz check for openshift apiserver availability
+
+UPSTREAM: <carry>: wait for oauth-apiserver accessibility
+
+UPSTREAM: <carry>: provide a new admission plugin to mutate management pods CPUs requests
+
+The ManagementCPUOverride admission plugin replaces pod container CPU requests with a new management resource.
+It applies to all pods that:
+ 1. are in an allowed namespace
+ 2. and have the workload annotation.
+
+It also sets the new management resource request and limit and  set resource annotation that CRI-O can
+recognize and apply the relevant changes.
+For more information, see - https://github.com/openshift/enhancements/pull/703
+
+Conditions for CPUs requests deletion:
+ 1. The namespace should have allowed annotation "workload.openshift.io/allowed": "management"
+ 2. The pod should have management annotation: "workload.openshift.io/management": "{"effect": "PreferredDuringScheduling"}"
+ 3. All nodes under the cluster should have new management resource - "management.workload.openshift.io/cores"
+ 4. The CPU request deletion will not change the pod QoS class
+
+UPSTREAM: <carry>: Does not prevent pod creation because of no nodes reason when it runs under the regular cluster
+
+Check the `cluster` infrastructure resource status to be sure that we run on top of a SNO cluster
+and in case if the pod runs on top of regular cluster, exit before node existence check.
+
+UPSTREAM: <carry>: do not mutate pods when it has a container with both CPU request and limit
+
+Removing the CPU request from the container that has a CPU limit will result in the defaulter to set the CPU request back equals to the CPU limit.
+
+UPSTREAM: <carry>: Reject the pod creation when we can not decide the cluster type
+
+It is possible a race condition between pod creation and the update of the
+infrastructure resource status with correct values under
+Status.ControlPlaneTopology and Status.InfrastructureTopology.
+
+UPSTREAM: <carry>: add CRD validation for dnses
+
+Add an admission plugin that validates the dnses.operator.openshift.io
+custom resource.  For now, the plugin only validates the DNS pod
+node-placement parameters.
+
+This commit fixes bug 1967745.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=1967745
+
+* openshift-kube-apiserver/admission/customresourcevalidation/attributes.go
+(init): Install operatorv1 into supportedObjectsScheme.
+* openshift-kube-apiserver/admission/customresourcevalidation/customresourcevalidationregistration/cr_validation_registration.go
+(AllCustomResourceValidators, RegisterCustomResourceValidation): Register
+the new plugin.
+* openshift-kube-apiserver/admission/customresourcevalidation/dns/validate_dns.go:
+New file.
+(PluginName): New const.
+(Register): New function.  Register the plugin.
+(toDNSV1): New function.  Convert a runtime object to a versioned DNS.
+(dnsV1): New type to represent a runtime object that is validated as a
+versioned DNS.
+(ValidateCreate, ValidateUpdate, ValidateStatusUpdate): New methods.
+Implement the ObjectValidator interface, using the validateDNSSpecCreate
+and validateDNSSpecUpdate helpers.
+(validateDNSSpecCreate, validateDNSSpecUpdate): New functions.  Validate a
+DNS, using the validateDNSSpec helper.
+(validateDNSSpec): New function.  Validate the spec field of a DNS, using
+the validateDNSNodePlacement helper.
+(validateDNSNodePlacement): New function.  Validate the node selector and
+tolerations in a DNS's node-placement parameters, using
+validateTolerations.
+(validateTolerations): New function.  Validate a slice of
+corev1.Toleration.
+* openshift-kube-apiserver/admission/customresourcevalidation/dns/validate_dns_test.go:
+New file.
+(TestFailValidateDNSSpec): Verify that validateDNSSpec rejects invalid DNS
+specs.
+(TestSucceedValidateDNSSpec): Verify that validateDNSSpec accepts valid DNS
+specs.
+* vendor/*: Regenerate.
+
+UPSTREAM: <carry>: prevent the kubecontrollermanager service-ca from getting less secure
+
+UPSTREAM: <carry>: allow SCC to be disabled on a per-namespace basis
+
+UPSTREAM: <carry>: verify required http2 cipher suites
+
+In the Apiserver admission, we need to return an error if the required
+http2 cipher suites are missing from a custom tlsSecurityProfile.
+Currently, custom cipher suites missing ECDHE_RSA_WITH_AES_128_GCM_SHA256 or
+ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 result in invalid http2 Server
+configuration causing the apiservers to crash.
+See: go/x/net/http2.ConfigureServer for futher information.
+
+UPSTREAM: <carry>: drop the warning to use --keep-annotations
+
+When a user runs the `oc debug` command for the pod with the
+management resource, we will inform him that he should pass
+`--keep-annotations` parameter to the debug command.
+
+UPSTREAM: <carry>: admission/managementcpusoverride: cover the roll-back case
+
+During the upgrade and roll-back flow 4.7->4.8->4.7, the topology related
+fields under the infrastructure can be empty because the
+old API does not support them.
+
+The code will equal the empty infrastructure section with the current one.
+When the status has some other non-empty field, and topology fields
+are empty, we assume that the cluster currently passes
+via roll-back and not via the clean install.
+
+UPSTREAM: <carry>: Remove pod warning annotation when workload partitioning is disabled
+
+UPSTREAM: <carry>: use new access token inactivity timeout field.
+
+UPSTREAM: <carry>: apirequestcount validation
+
+UPSTREAM: <carry>: Added config node object validation for extreme latency profiles
+
+UPSTREAM: <carry>: Add Upstream validation in the DNS admission check
+
+patches
+
+UPSTREAM: <carry>: Make RestrictedEndpointsAdmission check NotReadyAddresses
+
+UPSTREAM: <carry>: Make RestrictedEndpointsAdmission restrict EndpointSlices as well
+
+Moved SkipSystemMasterAuthorizers to the authorizer.
+
+UPSTREAM: <carry>: Add validation plugin for CRD-based route parity.
+
+UPSTREAM: <carry>: Add host assignment plugin for CRD-based routes.
+
+UPSTREAM: <carry>: Apply shared defaulters to CRD-based routes.
+
+Signed-off-by: Artyom Lukianov <alukiano@redhat.com>
+Signed-off-by: Damien Grisonnet <dgrisonn@redhat.com>
+Signed-off-by: Swarup Ghosh <swghosh@redhat.com>
+OpenShift-Rebase-Source: 932411ee865
+OpenShift-Rebase-Source: 1899555d4a7
+OpenShift-Rebase-Source: 453583eb395
+OpenShift-Rebase-Source: bf7e23e03e9
+
+UPSTREAM: <carry>: STOR-829: Add CSIInlineVolumeSecurity admission plugin
+
+The CSIInlineVolumeSecurity admission plugin inspects inline CSI
+volumes on pod creation and compares the
+security.openshift.io/csi-ephemeral-volume-profile label on the
+CSIDriver object to the pod security profile on the namespace.
+
+OpenShift-Rebase-Source: a65c34b8f1a
+
+UPSTREAM: <carry>: add icsp,idms,itms validation reject creating icsp with idms/itms exist
+
+    Reject icsp with idms.itms resources exists. According to the discuusion resolution https://docs.google.com/document/d/13h6IJn8wlzXdiPMvCWlMEHOXXqEZ9_GYOl02Wldb3z8/edit?usp=sharing,
+            one of current icsp or new mirror setting crd should be rejected if a user tries to use them on the same cluster.
+
+Signed-off-by: Qi Wang <qiwan@redhat.com>
+
+UPSTREAM: <carry>: node admission plugin for cpu partitioning
+
+The ManagedNode admission plugin makes the Infrastructure.Status.CPUPartitioning field authoritative.
+This validates that nodes that wish to join the cluster are first configured to properly handle workload pinning
+For more information see - https://github.com/openshift/enhancements/pull/1213
+
+Signed-off-by: ehila <ehila@redhat.com>
+
+UPSTREAM: <carry>: kube-apiserver: allow injection of kube-apiserver options
+
+UPSTREAM: <carry>: kube-apiserver: allow rewiring
+
+OpenShift-Rebase-Source: 56b49c9c143
+OpenShift-Rebase-Source: bcf574c65d1
+
+UPSTREAM: <carry>: openshift-kube-apiserver: add kube-apiserver patches
+
+UPSTREAM: <carry>: openshift-kube-apiserver: add kube-apiserver patches
+---
+ cmd/kube-apiserver/app/options/options.go     |  6 ++
+ cmd/kube-apiserver/app/server.go              | 33 ++++++++++
+ pkg/controlplane/apiserver/config.go          | 15 +++++
+ pkg/kubeapiserver/authorizer/config.go        |  4 ++
+ pkg/kubeapiserver/authorizer/modes/patch.go   |  8 +++
+ pkg/kubeapiserver/authorizer/patch.go         |  8 +++
+ pkg/kubeapiserver/authorizer/reload.go        | 26 ++++++--
+ .../rbac/bootstrappolicy/controller_policy.go |  2 +
+ .../rbac/bootstrappolicy/patch_policy.go      | 65 +++++++++++++++++++
+ .../authorizer/rbac/bootstrappolicy/policy.go |  6 +-
+ .../testdata/controller-roles.yaml            | 12 ++++
+ 11 files changed, 175 insertions(+), 10 deletions(-)
+ create mode 100644 pkg/kubeapiserver/authorizer/modes/patch.go
+ create mode 100644 pkg/kubeapiserver/authorizer/patch.go
+ create mode 100644 plugin/pkg/auth/authorizer/rbac/bootstrappolicy/patch_policy.go
+
+diff --git a/cmd/kube-apiserver/app/options/options.go b/cmd/kube-apiserver/app/options/options.go
+index ebed12af1d6..17c940a734d 100644
+--- a/cmd/kube-apiserver/app/options/options.go
++++ b/cmd/kube-apiserver/app/options/options.go
+@@ -61,6 +61,8 @@ type Extra struct {
+ 	EndpointReconcilerType string
+
+ 	MasterCount int
++
++	OpenShiftConfig string
+ }
+
+ // NewServerRunOptions creates and returns ServerRunOptions according to the given featureGate and effectiveVersion of the server binary to run.
+@@ -156,5 +158,9 @@ func (s *ServerRunOptions) Flags() (fss cliflag.NamedFlagSets) {
+ 		"The number of apiservers running in the cluster, must be a positive number. (In use when --endpoint-reconciler-type=master-count is enabled.)")
+ 	fs.MarkDeprecated("apiserver-count", "apiserver-count is deprecated and will be removed in a future version.")
+
++	fs.StringVar(&s.OpenShiftConfig, "openshift-config", s.OpenShiftConfig, "config for openshift")
++	fs.MarkDeprecated("openshift-config", "to be removed")
++	fs.MarkHidden("openshift-config")
++
+ 	return fss
+ }
+diff --git a/cmd/kube-apiserver/app/server.go b/cmd/kube-apiserver/app/server.go
+index fad0f1e9579..5fcccd80886 100644
+--- a/cmd/kube-apiserver/app/server.go
++++ b/cmd/kube-apiserver/app/server.go
+@@ -25,6 +25,10 @@ import (
+ 	"net/url"
+ 	"os"
+
++	"k8s.io/kubernetes/openshift-kube-apiserver/admission/admissionenablement"
++	"k8s.io/kubernetes/openshift-kube-apiserver/enablement"
++	"k8s.io/kubernetes/openshift-kube-apiserver/openshiftkubeapiserver"
++
+ 	"github.com/spf13/cobra"
+ 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+ 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+@@ -96,6 +100,35 @@ cluster's shared state through which all other components interact.`,
+ 			}
+ 			cliflag.PrintFlags(fs)
+
++			if len(s.OpenShiftConfig) > 0 {
++				// if we are running openshift, we modify the admission chain defaults accordingly
++				admissionenablement.InstallOpenShiftAdmissionPlugins(s)
++
++				openshiftConfig, err := enablement.GetOpenshiftConfig(s.OpenShiftConfig)
++				if err != nil {
++					klog.Fatal(err)
++				}
++				enablement.ForceOpenShift(openshiftConfig)
++
++				args, err := openshiftkubeapiserver.ConfigToFlags(openshiftConfig)
++				if err != nil {
++					return err
++				}
++
++				// hopefully this resets the flags?
++				if err := cmd.ParseFlags(args); err != nil {
++					return err
++				}
++
++				// print merged flags (merged from OpenshiftConfig)
++				cliflag.PrintFlags(cmd.Flags())
++
++				enablement.ForceGlobalInitializationForOpenShift()
++			} else {
++				// print default flags
++				cliflag.PrintFlags(cmd.Flags())
++			}
++
+ 			// set default options
+ 			completedOptions, err := s.Complete()
+ 			if err != nil {
+diff --git a/pkg/controlplane/apiserver/config.go b/pkg/controlplane/apiserver/config.go
+index c204e5058ef..568d0c138a6 100644
+--- a/pkg/controlplane/apiserver/config.go
++++ b/pkg/controlplane/apiserver/config.go
+@@ -25,6 +25,10 @@ import (
+
+ 	noopoteltrace "go.opentelemetry.io/otel/trace/noop"
+
++	"k8s.io/kubernetes/openshift-kube-apiserver/admission/admissionenablement"
++	"k8s.io/kubernetes/openshift-kube-apiserver/enablement"
++	"k8s.io/kubernetes/openshift-kube-apiserver/openshiftkubeapiserver"
++
+ 	"k8s.io/apimachinery/pkg/api/meta"
+ 	"k8s.io/apimachinery/pkg/runtime"
+ 	utilnet "k8s.io/apimachinery/pkg/util/net"
+@@ -137,6 +141,8 @@ func BuildGenericConfig(
+ 	// on a fast local network
+ 	genericConfig.LoopbackClientConfig.DisableCompression = true
+
++	enablement.SetLoopbackClientConfig(genericConfig.LoopbackClientConfig)
++
+ 	kubeClientConfig := genericConfig.LoopbackClientConfig
+ 	clientgoExternalClient, err := clientgoclientset.NewForConfig(kubeClientConfig)
+ 	if err != nil {
+@@ -356,6 +362,15 @@ func CreateConfig(
+ 	if err != nil {
+ 		return nil, nil, fmt.Errorf("failed to create real dynamic external client: %w", err)
+ 	}
++
++	if err := openshiftkubeapiserver.OpenShiftKubeAPIServerConfigPatch(genericConfig, versionedInformers, &genericInitializers); err != nil {
++		return nil, nil, fmt.Errorf("failed to patch: %v", err)
++	}
++
++	if enablement.IsOpenShift() {
++		admissionenablement.SetAdmissionDefaults(&opts, versionedInformers, clientgoExternalClient)
++	}
++
+ 	err = opts.Admission.ApplyTo(
+ 		genericConfig,
+ 		versionedInformers,
+diff --git a/pkg/kubeapiserver/authorizer/config.go b/pkg/kubeapiserver/authorizer/config.go
+index 5a74fa7c748..f8a1bfa0cfe 100644
+--- a/pkg/kubeapiserver/authorizer/config.go
++++ b/pkg/kubeapiserver/authorizer/config.go
+@@ -34,6 +34,7 @@ import (
+ 	utilfeature "k8s.io/apiserver/pkg/util/feature"
+ 	versionedinformers "k8s.io/client-go/informers"
+ 	resourcev1alpha2informers "k8s.io/client-go/informers/resource/v1alpha2"
++	"k8s.io/kubernetes/openshift-kube-apiserver/authorization/scopeauthorizer"
+ 	"k8s.io/kubernetes/pkg/auth/authorizer/abac"
+ 	"k8s.io/kubernetes/pkg/auth/nodeidentifier"
+ 	"k8s.io/kubernetes/pkg/features"
+@@ -122,6 +123,9 @@ func (config Config) New(ctx context.Context, serverID string) (authorizer.Autho
+ 				&rbac.ClusterRoleGetter{Lister: config.VersionedInformerFactory.Rbac().V1().ClusterRoles().Lister()},
+ 				&rbac.ClusterRoleBindingLister{Lister: config.VersionedInformerFactory.Rbac().V1().ClusterRoleBindings().Lister()},
+ 			)
++		case authzconfig.AuthorizerType(modes.ModeScope):
++			// Wrap with an authorizer that detects unsafe requests and modifies verbs/resources appropriately so policy can address them separately
++			r.scopeLimitedAuthorizer = scopeauthorizer.NewAuthorizer(config.VersionedInformerFactory.Rbac().V1().ClusterRoles().Lister())
+ 		}
+ 	}
+
+diff --git a/pkg/kubeapiserver/authorizer/modes/patch.go b/pkg/kubeapiserver/authorizer/modes/patch.go
+new file mode 100644
+index 00000000000..bc892601ebe
+--- /dev/null
++++ b/pkg/kubeapiserver/authorizer/modes/patch.go
+@@ -0,0 +1,8 @@
++package modes
++
++var ModeScope = "Scope"
++var ModeSystemMasters = "SystemMasters"
++
++func init() {
++	AuthorizationModeChoices = append(AuthorizationModeChoices, ModeScope, ModeSystemMasters)
++}
+diff --git a/pkg/kubeapiserver/authorizer/patch.go b/pkg/kubeapiserver/authorizer/patch.go
+new file mode 100644
+index 00000000000..8a095efcf98
+--- /dev/null
++++ b/pkg/kubeapiserver/authorizer/patch.go
+@@ -0,0 +1,8 @@
++package authorizer
++
++var skipSystemMastersAuthorizer = false
++
++// SkipSystemMastersAuthorizer disable implicitly added system/master authz, and turn it into another authz mode "SystemMasters", to be added via authorization-mode
++func SkipSystemMastersAuthorizer() {
++	skipSystemMastersAuthorizer = true
++}
+diff --git a/pkg/kubeapiserver/authorizer/reload.go b/pkg/kubeapiserver/authorizer/reload.go
+index afd3ca76be6..575fba1b486 100644
+--- a/pkg/kubeapiserver/authorizer/reload.go
++++ b/pkg/kubeapiserver/authorizer/reload.go
+@@ -27,6 +27,8 @@ import (
+ 	"sync/atomic"
+ 	"time"
+
++	"k8s.io/kubernetes/openshift-kube-apiserver/authorization/browsersafe"
++
+ 	"k8s.io/apimachinery/pkg/util/sets"
+ 	authzconfig "k8s.io/apiserver/pkg/apis/apiserver"
+ 	"k8s.io/apiserver/pkg/authentication/user"
+@@ -58,9 +60,10 @@ type reloadableAuthorizerResolver struct {
+ 	reloadInterval         time.Duration
+ 	requireNonWebhookTypes sets.Set[authzconfig.AuthorizerType]
+
+-	nodeAuthorizer *node.NodeAuthorizer
+-	rbacAuthorizer *rbac.RBACAuthorizer
+-	abacAuthorizer abac.PolicyList
++	nodeAuthorizer         *node.NodeAuthorizer
++	rbacAuthorizer         *rbac.RBACAuthorizer
++	scopeLimitedAuthorizer authorizer.Authorizer
++	abacAuthorizer         abac.PolicyList
+
+ 	lastLoadedLock   sync.Mutex
+ 	lastLoadedConfig *authzconfig.AuthorizationConfiguration
+@@ -93,9 +96,11 @@ func (r *reloadableAuthorizerResolver) newForConfig(authzConfig *authzconfig.Aut
+ 		ruleResolvers []authorizer.RuleResolver
+ 	)
+
+-	// Add SystemPrivilegedGroup as an authorizing group
+-	superuserAuthorizer := authorizerfactory.NewPrivilegedGroups(user.SystemPrivilegedGroup)
+-	authorizers = append(authorizers, superuserAuthorizer)
++	if !skipSystemMastersAuthorizer {
++		// Add SystemPrivilegedGroup as an authorizing group
++		superuserAuthorizer := authorizerfactory.NewPrivilegedGroups(user.SystemPrivilegedGroup)
++		authorizers = append(authorizers, superuserAuthorizer)
++	}
+
+ 	for _, configuredAuthorizer := range authzConfig.Authorizers {
+ 		// Keep cases in sync with constant list in k8s.io/kubernetes/pkg/kubeapiserver/authorizer/modes/modes.go.
+@@ -159,8 +164,15 @@ func (r *reloadableAuthorizerResolver) newForConfig(authzConfig *authzconfig.Aut
+ 			if r.rbacAuthorizer == nil {
+ 				return nil, nil, fmt.Errorf("authorizer type RBAC is not allowed if it was not enabled at initial server startup")
+ 			}
+-			authorizers = append(authorizers, authorizationmetrics.InstrumentedAuthorizer(string(configuredAuthorizer.Type), configuredAuthorizer.Name, r.rbacAuthorizer))
++			// Wrap with an authorizer that detects unsafe requests and modifies verbs/resources appropriately so policy can address them separately
++			authorizers = append(authorizers, authorizationmetrics.InstrumentedAuthorizer(string(configuredAuthorizer.Type), configuredAuthorizer.Name, browsersafe.NewBrowserSafeAuthorizer(r.rbacAuthorizer, user.AllAuthenticated)))
+ 			ruleResolvers = append(ruleResolvers, r.rbacAuthorizer)
++		case authzconfig.AuthorizerType(modes.ModeScope):
++			// Wrap with an authorizer that detects unsafe requests and modifies verbs/resources appropriately so policy can address them separately
++			authorizers = append(authorizers, browsersafe.NewBrowserSafeAuthorizer(r.scopeLimitedAuthorizer, user.AllAuthenticated))
++		case authzconfig.AuthorizerType(modes.ModeSystemMasters):
++			// no browsersafeauthorizer here becase that rewrites the resources.  This authorizer matches no matter which resource matches.
++			authorizers = append(authorizers, authorizerfactory.NewPrivilegedGroups(user.SystemPrivilegedGroup))
+ 		default:
+ 			return nil, nil, fmt.Errorf("unknown authorization mode %s specified", configuredAuthorizer.Type)
+ 		}
+diff --git a/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/controller_policy.go b/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/controller_policy.go
+index b39ac933193..5fd09cf3b96 100644
+--- a/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/controller_policy.go
++++ b/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/controller_policy.go
+@@ -162,6 +162,7 @@ func buildControllerRoles() ([]rbacv1.ClusterRole, []rbacv1.ClusterRoleBinding)
+ 			// resource that is owned by the service and sets blockOwnerDeletion=true in its ownerRef.
+ 			rbacv1helpers.NewRule("update").Groups(legacyGroup).Resources("services/finalizers").RuleOrDie(),
+ 			rbacv1helpers.NewRule("get", "list", "create", "update", "delete").Groups(discoveryGroup).Resources("endpointslices").RuleOrDie(),
++			rbacv1helpers.NewRule("create").Groups(discoveryGroup).Resources("endpointslices/restricted").RuleOrDie(),
+ 			eventsRule(),
+ 		},
+ 	})
+@@ -178,6 +179,7 @@ func buildControllerRoles() ([]rbacv1.ClusterRole, []rbacv1.ClusterRoleBinding)
+ 			// see https://github.com/openshift/kubernetes/blob/8691466059314c3f7d6dcffcbb76d14596ca716c/pkg/controller/endpointslicemirroring/utils.go#L87-L88
+ 			rbacv1helpers.NewRule("update").Groups(legacyGroup).Resources("endpoints/finalizers").RuleOrDie(),
+ 			rbacv1helpers.NewRule("get", "list", "create", "update", "delete").Groups(discoveryGroup).Resources("endpointslices").RuleOrDie(),
++			rbacv1helpers.NewRule("create").Groups(discoveryGroup).Resources("endpointslices/restricted").RuleOrDie(),
+ 			eventsRule(),
+ 		},
+ 	})
+diff --git a/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/patch_policy.go b/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/patch_policy.go
+new file mode 100644
+index 00000000000..8f91d44c9c8
+--- /dev/null
++++ b/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/patch_policy.go
+@@ -0,0 +1,65 @@
++package bootstrappolicy
++
++import (
++	rbacv1 "k8s.io/api/rbac/v1"
++	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
++	rbacv1helpers "k8s.io/kubernetes/pkg/apis/rbac/v1"
++)
++
++var ClusterRoles = clusterRoles
++
++func OpenshiftClusterRoles() []rbacv1.ClusterRole {
++	const (
++		// These are valid under the "nodes" resource
++		NodeMetricsSubresource = "metrics"
++		NodeStatsSubresource   = "stats"
++		NodeSpecSubresource    = "spec"
++		NodeLogSubresource     = "log"
++	)
++
++	roles := clusterRoles()
++	roles = append(roles, []rbacv1.ClusterRole{
++		{
++			ObjectMeta: metav1.ObjectMeta{
++				Name: "system:node-admin",
++			},
++			Rules: []rbacv1.PolicyRule{
++				// Allow read-only access to the API objects
++				rbacv1helpers.NewRule(Read...).Groups(legacyGroup).Resources("nodes").RuleOrDie(),
++				// Allow all API calls to the nodes
++				rbacv1helpers.NewRule("proxy").Groups(legacyGroup).Resources("nodes").RuleOrDie(),
++				rbacv1helpers.NewRule("*").Groups(legacyGroup).Resources("nodes/proxy", "nodes/"+NodeMetricsSubresource, "nodes/"+NodeSpecSubresource, "nodes/"+NodeStatsSubresource, "nodes/"+NodeLogSubresource).RuleOrDie(),
++			},
++		},
++		{
++			ObjectMeta: metav1.ObjectMeta{
++				Name: "system:node-reader",
++			},
++			Rules: []rbacv1.PolicyRule{
++				// Allow read-only access to the API objects
++				rbacv1helpers.NewRule(Read...).Groups(legacyGroup).Resources("nodes").RuleOrDie(),
++				// Allow read access to node metrics
++				rbacv1helpers.NewRule("get").Groups(legacyGroup).Resources("nodes/"+NodeMetricsSubresource, "nodes/"+NodeSpecSubresource).RuleOrDie(),
++				// Allow read access to stats
++				// Node stats requests are submitted as POSTs.  These creates are non-mutating
++				rbacv1helpers.NewRule("get", "create").Groups(legacyGroup).Resources("nodes/" + NodeStatsSubresource).RuleOrDie(),
++				// TODO: expose other things like /healthz on the node once we figure out non-resource URL policy across systems
++			},
++		},
++	}...)
++
++	addClusterRoleLabel(roles)
++	return roles
++}
++
++var ClusterRoleBindings = clusterRoleBindings
++
++func OpenshiftClusterRoleBindings() []rbacv1.ClusterRoleBinding {
++	bindings := clusterRoleBindings()
++	bindings = append(bindings, []rbacv1.ClusterRoleBinding{
++		rbacv1helpers.NewClusterBinding("system:node-admin").Users("system:master", "system:kube-apiserver").Groups("system:node-admins").BindingOrDie(),
++	}...)
++
++	addClusterRoleBindingLabel(bindings)
++	return bindings
++}
+diff --git a/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/policy.go b/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/policy.go
+index f91da6e2673..317becfa4a6 100644
+--- a/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/policy.go
++++ b/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/policy.go
+@@ -190,8 +190,8 @@ func NodeRules() []rbacv1.PolicyRule {
+ 	return nodePolicyRules
+ }
+
+-// ClusterRoles returns the cluster roles to bootstrap an API server with
+-func ClusterRoles() []rbacv1.ClusterRole {
++// clusterRoles returns the cluster roles to bootstrap an API server with
++func clusterRoles() []rbacv1.ClusterRole {
+ 	roles := []rbacv1.ClusterRole{
+ 		{
+ 			// a "root" role which can do absolutely anything
+@@ -609,7 +609,7 @@ func ClusterRoles() []rbacv1.ClusterRole {
+ const systemNodeRoleName = "system:node"
+
+ // ClusterRoleBindings return default rolebindings to the default roles
+-func ClusterRoleBindings() []rbacv1.ClusterRoleBinding {
++func clusterRoleBindings() []rbacv1.ClusterRoleBinding {
+ 	rolebindings := []rbacv1.ClusterRoleBinding{
+ 		rbacv1helpers.NewClusterBinding("cluster-admin").Groups(user.SystemPrivilegedGroup).BindingOrDie(),
+ 		rbacv1helpers.NewClusterBinding("system:monitoring").Groups(user.MonitoringGroup).BindingOrDie(),
+diff --git a/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/testdata/controller-roles.yaml b/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/testdata/controller-roles.yaml
+index f17fc954f88..2344db6e915 100644
+--- a/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/testdata/controller-roles.yaml
++++ b/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/testdata/controller-roles.yaml
+@@ -517,6 +517,12 @@ items:
+     - get
+     - list
+     - update
++  - apiGroups:
++    - discovery.k8s.io
++    resources:
++    - endpointslices/restricted
++    verbs:
++    - create
+   - apiGroups:
+     - ""
+     - events.k8s.io
+@@ -567,6 +573,12 @@ items:
+     - get
+     - list
+     - update
++  - apiGroups:
++    - discovery.k8s.io
++    resources:
++    - endpointslices/restricted
++    verbs:
++    - create
+   - apiGroups:
+     - ""
+     - events.k8s.io
+--
+2.45.2
+

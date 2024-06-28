@@ -1,0 +1,62 @@
+From 1075598893f987db5d1e4bf6ae40c86efcc3c22a Mon Sep 17 00:00:00 2001
+From: David Eads <deads@redhat.com>
+Date: Mon, 14 Jun 2021 15:49:49 -0400
+Subject: [PATCH] UPSTREAM: <carry>: emit event when readyz goes true
+
+OpenShift-Rebase-Source: 6386eb2dafe
+---
+ pkg/controlplane/apiserver/server.go                        | 4 ++++
+ pkg/controlplane/controller/kubernetesservice/controller.go | 2 ++
+ pkg/controlplane/controller/kubernetesservice/patch.go      | 5 +++++
+ 3 files changed, 11 insertions(+)
+ create mode 100644 pkg/controlplane/controller/kubernetesservice/patch.go
+
+diff --git a/pkg/controlplane/apiserver/server.go b/pkg/controlplane/apiserver/server.go
+index b22eb8ba562..09c08002f56 100644
+--- a/pkg/controlplane/apiserver/server.go
++++ b/pkg/controlplane/apiserver/server.go
+@@ -21,6 +21,8 @@ import (
+ 	"os"
+ 	"time"
+
++	"k8s.io/kubernetes/pkg/controlplane/controller/kubernetesservice"
++
+ 	coordinationapiv1 "k8s.io/api/coordination/v1"
+ 	apiv1 "k8s.io/api/core/v1"
+ 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+@@ -130,6 +132,8 @@ func (c completedConfig) New(name string, delegationTarget genericapiserver.Dele
+ 		VersionedInformers:        c.VersionedInformers,
+ 	}
+
++	kubernetesservice.KubeAPIServerEmitEventFn = s.GenericAPIServer.Eventf
++
+ 	client, err := kubernetes.NewForConfig(s.GenericAPIServer.LoopbackClientConfig)
+ 	if err != nil {
+ 		return nil, err
+diff --git a/pkg/controlplane/controller/kubernetesservice/controller.go b/pkg/controlplane/controller/kubernetesservice/controller.go
+index d8cfd44222c..e5d8c04206b 100644
+--- a/pkg/controlplane/controller/kubernetesservice/controller.go
++++ b/pkg/controlplane/controller/kubernetesservice/controller.go
+@@ -155,6 +155,8 @@ func (c *Controller) Run(ch <-chan struct{}) {
+ 		return
+ 	}
+
++	KubeAPIServerEmitEventFn(corev1.EventTypeWarning, "KubeAPIReadyz", "readyz=true")
++
+ 	wait.NonSlidingUntil(func() {
+ 		// Service definition is not reconciled after first
+ 		// run, ports and type will be corrected only during
+diff --git a/pkg/controlplane/controller/kubernetesservice/patch.go b/pkg/controlplane/controller/kubernetesservice/patch.go
+new file mode 100644
+index 00000000000..d78731dda37
+--- /dev/null
++++ b/pkg/controlplane/controller/kubernetesservice/patch.go
+@@ -0,0 +1,5 @@
++package kubernetesservice
++
++var KubeAPIServerEmitEventFn EventSinkFunc = nil
++
++type EventSinkFunc func(eventType, reason, messageFmt string, args ...interface{})
+--
+2.45.2
+
