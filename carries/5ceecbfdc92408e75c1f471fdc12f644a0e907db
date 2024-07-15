@@ -1,0 +1,226 @@
+From e00395b91c346a15be4f56193b81304b20204b5c Mon Sep 17 00:00:00 2001
+From: Tomas Nozicka <tnozicka@gmail.com>
+Date: Thu, 29 Oct 2020 13:56:29 +0100
+Subject: [PATCH] UPSTREAM: <carry>: Release lock on KCM and KS termination
+
+UPSTREAM: <carry>: Force releasing the lock on exit for KS
+
+squash with UPSTREAM: <carry>: Release lock on KCM and KS termination
+
+OpenShift-Rebase-Source: fc91252212e
+
+UPSTREAM: <carry>: Release lock on KCM and KS termination
+---
+ .../app/controllermanager.go                  | 47 +++++++++++----
+ cmd/kube-controller-manager/app/patch.go      | 14 +++++
+ cmd/kube-controller-manager/app/patch_test.go | 58 +++++++++++++++++++
+ .../app/testing/testserver.go                 |  3 +-
+ 4 files changed, 110 insertions(+), 12 deletions(-)
+ create mode 100644 cmd/kube-controller-manager/app/patch_test.go
+
+diff --git a/cmd/kube-controller-manager/app/controllermanager.go b/cmd/kube-controller-manager/app/controllermanager.go
+index 94f4ff8555f..a75678a97e8 100644
+--- a/cmd/kube-controller-manager/app/controllermanager.go
++++ b/cmd/kube-controller-manager/app/controllermanager.go
+@@ -37,6 +37,7 @@ import (
+ 	"k8s.io/apimachinery/pkg/util/sets"
+ 	"k8s.io/apimachinery/pkg/util/uuid"
+ 	"k8s.io/apimachinery/pkg/util/wait"
++	"k8s.io/apiserver/pkg/server"
+ 	"k8s.io/apiserver/pkg/server/healthz"
+ 	"k8s.io/apiserver/pkg/server/mux"
+ 	utilfeature "k8s.io/apiserver/pkg/util/feature"
+@@ -156,7 +157,9 @@ controller, and serviceaccounts controller.`,
+ 
+ 			// add feature enablement metrics
+ 			utilfeature.DefaultMutableFeatureGate.AddMetrics()
+-			return Run(context.Background(), c.Complete())
++
++			stopCh := server.SetupSignalHandler()
++			return Run(context.Background(), c.Complete(), stopCh)
+ 		},
+ 		Args: func(cmd *cobra.Command, args []string) error {
+ 			for _, arg := range args {
+@@ -193,9 +196,9 @@ func ResyncPeriod(c *config.CompletedConfig) func() time.Duration {
+ }
+ 
+ // Run runs the KubeControllerManagerOptions.
+-func Run(ctx context.Context, c *config.CompletedConfig) error {
++func Run(ctx context.Context, c *config.CompletedConfig, stopCh2 <-chan struct{}) error {
+ 	logger := klog.FromContext(ctx)
+-	stopCh := ctx.Done()
++	stopCh := mergeCh(ctx.Done(), stopCh2)
+ 
+ 	// To help debugging, immediately log version
+ 	logger.Info("Starting", "version", version.Get())
+@@ -324,10 +327,18 @@ func Run(ctx context.Context, c *config.CompletedConfig) error {
+ 				run(ctx, controllerDescriptors)
+ 			},
+ 			OnStoppedLeading: func() {
+-				logger.Error(nil, "leaderelection lost")
+-				klog.FlushAndExit(klog.ExitFlushTimeout, 1)
++				select {
++				case <-stopCh:
++					// We were asked to terminate. Exit 0.
++					klog.Info("Requested to terminate. Exiting.")
++					os.Exit(0)
++				default:
++					// We lost the lock.
++					logger.Error(nil, "leaderelection lost")
++					klog.FlushAndExit(klog.ExitFlushTimeout, 1)
++				}
+ 			},
+-		})
++		}, stopCh)
+ 
+ 	// If Leader Migration is enabled, proceed to attempt the migration lock.
+ 	if leaderMigrator != nil {
+@@ -351,10 +362,18 @@ func Run(ctx context.Context, c *config.CompletedConfig) error {
+ 					run(ctx, controllerDescriptors)
+ 				},
+ 				OnStoppedLeading: func() {
+-					logger.Error(nil, "migration leaderelection lost")
+-					klog.FlushAndExit(klog.ExitFlushTimeout, 1)
++					select {
++					case <-stopCh:
++						// We were asked to terminate. Exit 0.
++						klog.Info("Requested to terminate. Exiting.")
++						os.Exit(0)
++					default:
++						// We lost the lock.
++						logger.Error(nil, "migration leaderelection lost")
++						klog.FlushAndExit(klog.ExitFlushTimeout, 1)
++					}
+ 				},
+-			})
++			}, stopCh)
+ 	}
+ 
+ 	<-stopCh
+@@ -886,7 +905,7 @@ func createClientBuilders(logger klog.Logger, c *config.CompletedConfig) (client
+ 
+ // leaderElectAndRun runs the leader election, and runs the callbacks once the leader lease is acquired.
+ // TODO: extract this function into staging/controller-manager
+-func leaderElectAndRun(ctx context.Context, c *config.CompletedConfig, lockIdentity string, electionChecker *leaderelection.HealthzAdaptor, resourceLock string, leaseName string, callbacks leaderelection.LeaderCallbacks) {
++func leaderElectAndRun(ctx context.Context, c *config.CompletedConfig, lockIdentity string, electionChecker *leaderelection.HealthzAdaptor, resourceLock string, leaseName string, callbacks leaderelection.LeaderCallbacks, stopCh <-chan struct{}) {
+ 	logger := klog.FromContext(ctx)
+ 	rl, err := resourcelock.NewFromKubeconfig(resourceLock,
+ 		c.ComponentConfig.Generic.LeaderElection.ResourceNamespace,
+@@ -902,7 +921,13 @@ func leaderElectAndRun(ctx context.Context, c *config.CompletedConfig, lockIdent
+ 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
+ 	}
+ 
+-	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
++	leCtx, cancel := context.WithCancel(ctx)
++	defer cancel()
++	go func() {
++		<-stopCh
++		cancel()
++	}()
++	leaderelection.RunOrDie(leCtx, leaderelection.LeaderElectionConfig{
+ 		Lock:          rl,
+ 		LeaseDuration: c.ComponentConfig.Generic.LeaderElection.LeaseDuration.Duration,
+ 		RenewDeadline: c.ComponentConfig.Generic.LeaderElection.RenewDeadline.Duration,
+diff --git a/cmd/kube-controller-manager/app/patch.go b/cmd/kube-controller-manager/app/patch.go
+index 9286fa77cc3..1d8ae2eeb56 100644
+--- a/cmd/kube-controller-manager/app/patch.go
++++ b/cmd/kube-controller-manager/app/patch.go
+@@ -133,3 +133,17 @@ func createRestConfigForHealthMonitor(restConfig *rest.Config) *rest.Config {
+ 
+ 	return &restConfigCopy
+ }
++
++// mergeCh takes two stop channels and return a single one that
++// closes as soon as one of the inputs closes or receives data.
++func mergeCh(stopCh1, stopCh2 <-chan struct{}) <-chan struct{} {
++	merged := make(chan struct{})
++	go func() {
++		defer close(merged)
++		select {
++		case <-stopCh1:
++		case <-stopCh2:
++		}
++	}()
++	return merged
++}
+diff --git a/cmd/kube-controller-manager/app/patch_test.go b/cmd/kube-controller-manager/app/patch_test.go
+new file mode 100644
+index 00000000000..1730c38f002
+--- /dev/null
++++ b/cmd/kube-controller-manager/app/patch_test.go
+@@ -0,0 +1,58 @@
++package app
++
++import (
++	"testing"
++)
++
++func TestMergeCh(t *testing.T) {
++	testCases := []struct {
++		name    string
++		chan1   chan struct{}
++		chan2   chan struct{}
++		closeFn func(chan struct{}, chan struct{})
++	}{
++		{
++			name:  "chan1 gets closed",
++			chan1: make(chan struct{}),
++			chan2: make(chan struct{}),
++			closeFn: func(a, b chan struct{}) {
++				close(a)
++			},
++		},
++		{
++			name:  "chan2 gets closed",
++			chan1: make(chan struct{}),
++			chan2: make(chan struct{}),
++			closeFn: func(a, b chan struct{}) {
++				close(b)
++			},
++		},
++		{
++			name:  "both channels get closed",
++			chan1: make(chan struct{}),
++			chan2: make(chan struct{}),
++			closeFn: func(a, b chan struct{}) {
++				close(a)
++				close(b)
++			},
++		},
++		{
++			name:  "channel receives data and returned channel is closed",
++			chan1: make(chan struct{}),
++			chan2: make(chan struct{}),
++			closeFn: func(a, b chan struct{}) {
++				a <- struct{}{}
++			},
++		},
++	}
++
++	for _, tc := range testCases {
++		t.Run(tc.name, func(t *testing.T) {
++			go tc.closeFn(tc.chan1, tc.chan2)
++			merged := mergeCh(tc.chan1, tc.chan2)
++			if _, ok := <-merged; ok {
++				t.Fatalf("expected closed channel, got data")
++			}
++		})
++	}
++}
+diff --git a/cmd/kube-controller-manager/app/testing/testserver.go b/cmd/kube-controller-manager/app/testing/testserver.go
+index c29ada8f566..9d2cd929f21 100644
+--- a/cmd/kube-controller-manager/app/testing/testserver.go
++++ b/cmd/kube-controller-manager/app/testing/testserver.go
+@@ -122,7 +122,8 @@ func StartTestServer(ctx context.Context, customFlags []string) (result TestServ
+ 	go func(ctx context.Context) {
+ 		defer close(errCh)
+ 
+-		if err := app.Run(ctx, config.Complete()); err != nil {
++		stopCh := make(chan struct{})
++		if err := app.Run(ctx, config.Complete(), stopCh); err != nil {
+ 			errCh <- err
+ 		}
+ 	}(ctx)
+-- 
+2.45.2
+

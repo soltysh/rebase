@@ -1,0 +1,206 @@
+From 3f4278226a498d15fb710a022fb31dce2205e573 Mon Sep 17 00:00:00 2001
+From: Lukasz Szaszkiewicz <lukasz.szaszkiewicz@gmail.com>
+Date: Thu, 26 Aug 2021 12:38:01 +0200
+Subject: [PATCH] UPSTREAM: <carry>: sets X-OpenShift-Internal-If-Not-Ready
+ HTTP Header for GC and Namespace controllers
+
+In general, setting the header will result in getting 429 when the server hasn't been ready.
+This prevents certain controllers like GC, Namespace from accidentally removing resources when the caches haven't been fully synchronized.
+
+OpenShift-Rebase-Source: 2ebf199dcc7
+---
+ .../app/config/patch.go                       |  1 +
+ .../app/controllermanager.go                  |  2 +-
+ .../app/options/options.go                    |  3 +
+ cmd/kube-controller-manager/app/patch.go      | 32 ++++++++-
+ cmd/kube-controller-manager/app/patch_test.go | 69 +++++++++++++++++++
+ 5 files changed, 105 insertions(+), 2 deletions(-)
+
+diff --git a/cmd/kube-controller-manager/app/config/patch.go b/cmd/kube-controller-manager/app/config/patch.go
+index 38b64663b18..3f79b64304c 100644
+--- a/cmd/kube-controller-manager/app/config/patch.go
++++ b/cmd/kube-controller-manager/app/config/patch.go
+@@ -15,4 +15,5 @@ type OpenShiftContext struct {
+ 	UnsupportedKubeAPIOverPreferredHost bool
+ 	PreferredHostRoundTripperWrapperFn  transport.WrapperFunc
+ 	PreferredHostHealthMonitor          *health.Prober
++	CustomRoundTrippers                 []transport.WrapperFunc
+ }
+diff --git a/cmd/kube-controller-manager/app/controllermanager.go b/cmd/kube-controller-manager/app/controllermanager.go
+index a75678a97e8..235c63bfb8c 100644
+--- a/cmd/kube-controller-manager/app/controllermanager.go
++++ b/cmd/kube-controller-manager/app/controllermanager.go
+@@ -140,7 +140,7 @@ controller, and serviceaccounts controller.`,
+ 			}
+ 			cliflag.PrintFlags(cmd.Flags())
+ 
+-			if err := SetUpPreferredHostForOpenShift(s); err != nil {
++			if err := SetUpCustomRoundTrippersForOpenShift(s); err != nil {
+ 				fmt.Fprintf(os.Stderr, "%v\n", err)
+ 				os.Exit(1)
+ 			}
+diff --git a/cmd/kube-controller-manager/app/options/options.go b/cmd/kube-controller-manager/app/options/options.go
+index c45b4466740..526bd1ec4ca 100644
+--- a/cmd/kube-controller-manager/app/options/options.go
++++ b/cmd/kube-controller-manager/app/options/options.go
+@@ -469,6 +469,9 @@ func (s KubeControllerManagerOptions) Config(allControllers []string, disabledBy
+ 		libgorestclient.DefaultServerName(kubeconfig)
+ 		kubeconfig.Wrap(s.OpenShiftContext.PreferredHostRoundTripperWrapperFn)
+ 	}
++	for _, customOpenShiftRoundTripper := range s.OpenShiftContext.CustomRoundTrippers {
++		kubeconfig.Wrap(customOpenShiftRoundTripper)
++	}
+ 
+ 	client, err := clientset.NewForConfig(restclient.AddUserAgent(kubeconfig, KubeControllerManagerUserAgent))
+ 	if err != nil {
+diff --git a/cmd/kube-controller-manager/app/patch.go b/cmd/kube-controller-manager/app/patch.go
+index 1d8ae2eeb56..5a2af55da0c 100644
+--- a/cmd/kube-controller-manager/app/patch.go
++++ b/cmd/kube-controller-manager/app/patch.go
+@@ -3,7 +3,9 @@ package app
+ import (
+ 	"fmt"
+ 	"io/ioutil"
++	"net/http"
+ 	"path"
++	"strings"
+ 	"time"
+ 
+ 	"k8s.io/apimachinery/pkg/util/json"
+@@ -11,6 +13,7 @@ import (
+ 	"k8s.io/client-go/informers"
+ 	"k8s.io/client-go/rest"
+ 	"k8s.io/client-go/tools/clientcmd"
++	"k8s.io/client-go/transport"
+ 	"k8s.io/component-base/metrics/legacyregistry"
+ 	"k8s.io/kubernetes/cmd/kube-controller-manager/app/config"
+ 	"k8s.io/kubernetes/cmd/kube-controller-manager/app/options"
+@@ -21,7 +24,9 @@ import (
+ 
+ var InformerFactoryOverride informers.SharedInformerFactory
+ 
+-func SetUpPreferredHostForOpenShift(controllerManagerOptions *options.KubeControllerManagerOptions) error {
++func SetUpCustomRoundTrippersForOpenShift(controllerManagerOptions *options.KubeControllerManagerOptions) error {
++	controllerManagerOptions.OpenShiftContext.CustomRoundTrippers = []transport.WrapperFunc{newRejectIfNotReadyHeaderRoundTripper([]string{"generic-garbage-collector", "namespace-controller"})}
++
+ 	if !controllerManagerOptions.OpenShiftContext.UnsupportedKubeAPIOverPreferredHost {
+ 		return nil
+ 	}
+@@ -134,6 +139,31 @@ func createRestConfigForHealthMonitor(restConfig *rest.Config) *rest.Config {
+ 	return &restConfigCopy
+ }
+ 
++// newRejectIfNotReadyHeaderRoundTripper a middleware for setting X-OpenShift-Internal-If-Not-Ready HTTP Header for the given users.
++// In general, setting the header will result in getting 429 when the server hasn't been ready.
++// This prevents certain controllers like GC, Namespace from accidentally removing resources when the caches haven't been fully synchronized.
++func newRejectIfNotReadyHeaderRoundTripper(eligibleUsers []string) func(http.RoundTripper) http.RoundTripper {
++	return func(rt http.RoundTripper) http.RoundTripper {
++		return &rejectIfNotReadyHeaderRT{baseRT: rt, eligibleUsers: eligibleUsers}
++	}
++}
++
++type rejectIfNotReadyHeaderRT struct {
++	baseRT        http.RoundTripper
++	eligibleUsers []string
++}
++
++func (rt *rejectIfNotReadyHeaderRT) RoundTrip(r *http.Request) (*http.Response, error) {
++	currentUser := r.UserAgent()
++	for _, eligibleUser := range rt.eligibleUsers {
++		if strings.Contains(currentUser, eligibleUser) {
++			r.Header.Set("X-OpenShift-Internal-If-Not-Ready", "reject")
++			break
++		}
++	}
++	return rt.baseRT.RoundTrip(r)
++}
++
+ // mergeCh takes two stop channels and return a single one that
+ // closes as soon as one of the inputs closes or receives data.
+ func mergeCh(stopCh1, stopCh2 <-chan struct{}) <-chan struct{} {
+diff --git a/cmd/kube-controller-manager/app/patch_test.go b/cmd/kube-controller-manager/app/patch_test.go
+index 1730c38f002..fad35b4620e 100644
+--- a/cmd/kube-controller-manager/app/patch_test.go
++++ b/cmd/kube-controller-manager/app/patch_test.go
+@@ -1,9 +1,78 @@
+ package app
+ 
+ import (
++	"fmt"
++	"net/http"
++	"net/textproto"
+ 	"testing"
+ )
+ 
++func TestRejectIfNotReadyHeaderRT(t *testing.T) {
++	scenarios := []struct {
++		name          string
++		eligibleUsers []string
++		currentUser   string
++		expectHeader  bool
++	}{
++		{
++			name:          "scenario 1: happy path",
++			currentUser:   "system:serviceaccount:kube-system:generic-garbage-collector",
++			eligibleUsers: []string{"generic-garbage-collector", "namespace-controller"},
++			expectHeader:  true,
++		},
++		{
++			name:          "scenario 2: ineligible user",
++			currentUser:   "system:serviceaccount:kube-system:service-account-controller",
++			eligibleUsers: []string{"generic-garbage-collector", "namespace-controller"},
++			expectHeader:  false,
++		},
++	}
++
++	for _, scenario := range scenarios {
++		t.Run(scenario.name, func(t *testing.T) {
++			// set up the test
++			fakeRT := fakeRTFunc(func(r *http.Request) (*http.Response, error) {
++				// this is where we validate if the header was set or not
++				headerSet := func() bool {
++					if len(r.Header.Get("X-OpenShift-Internal-If-Not-Ready")) > 0 {
++						return true
++					}
++					return false
++				}()
++				if scenario.expectHeader && !headerSet {
++					return nil, fmt.Errorf("%v header wasn't set", textproto.CanonicalMIMEHeaderKey("X-OpenShift-Internal-If-Not-Ready"))
++				}
++				if !scenario.expectHeader && headerSet {
++					return nil, fmt.Errorf("didn't expect %v header", textproto.CanonicalMIMEHeaderKey("X-OpenShift-Internal-If-Not-Ready"))
++				}
++				if scenario.expectHeader {
++					if value := r.Header.Get("X-OpenShift-Internal-If-Not-Ready"); value != "reject" {
++						return nil, fmt.Errorf("unexpected value %v in the %v header, expected \"reject\"", value, textproto.CanonicalMIMEHeaderKey("X-OpenShift-Internal-If-Not-Ready"))
++					}
++				}
++				return nil, nil
++			})
++			target := newRejectIfNotReadyHeaderRoundTripper(scenario.eligibleUsers)(fakeRT)
++			req, err := http.NewRequest("GET", "", nil)
++			if err != nil {
++				t.Fatal(err)
++			}
++			req.Header.Set("User-Agent", scenario.currentUser)
++
++			// act and validate
++			if _, err := target.RoundTrip(req); err != nil {
++				t.Fatal(err)
++			}
++		})
++	}
++}
++
++type fakeRTFunc func(r *http.Request) (*http.Response, error)
++
++func (rt fakeRTFunc) RoundTrip(r *http.Request) (*http.Response, error) {
++	return rt(r)
++}
++
+ func TestMergeCh(t *testing.T) {
+ 	testCases := []struct {
+ 		name    string
+-- 
+2.45.2
+

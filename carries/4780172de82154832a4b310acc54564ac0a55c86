@@ -1,4 +1,4 @@
-From ad1498b09ec34229b1b9ad910bf00f8dda688722 Mon Sep 17 00:00:00 2001
+From 1db5c117d2c9f12a15b2b07a857fa210c6cc4061 Mon Sep 17 00:00:00 2001
 From: Peter Hunt~ <pehunt@redhat.com>
 Date: Mon, 20 Mar 2023 11:43:25 -0400
 Subject: [PATCH] UPSTREAM: <carry>: disable load balancing on created cgroups
@@ -108,10 +108,10 @@ index 7e96dbe25ff..1310de57971 100644
  }
  
 diff --git a/pkg/kubelet/cm/cgroup_manager_unsupported.go b/pkg/kubelet/cm/cgroup_manager_unsupported.go
-index 976a6c48c42..760dc6b096e 100644
+index c2c6e52d2ce..b03f35397a7 100644
 --- a/pkg/kubelet/cm/cgroup_manager_unsupported.go
 +++ b/pkg/kubelet/cm/cgroup_manager_unsupported.go
-@@ -89,6 +89,9 @@ func (m *unsupportedCgroupManager) SetCgroupConfig(name CgroupName, resource v1.
+@@ -93,6 +93,9 @@ func (m *unsupportedCgroupManager) SetCgroupConfig(name CgroupName, resource v1.
  	return errNotSupported
  }
  
@@ -122,10 +122,10 @@ index 976a6c48c42..760dc6b096e 100644
  
  func NewCgroupName(base CgroupName, components ...string) CgroupName {
 diff --git a/pkg/kubelet/cm/cgroup_v1_manager_linux.go b/pkg/kubelet/cm/cgroup_v1_manager_linux.go
-index cffae2ff93e..670a3ff4deb 100644
+index 7325ba797c9..13e9f020541 100644
 --- a/pkg/kubelet/cm/cgroup_v1_manager_linux.go
 +++ b/pkg/kubelet/cm/cgroup_v1_manager_linux.go
-@@ -184,3 +184,7 @@ func (c *cgroupV1impl) setCgroupMemoryConfig(cgroupPath string, resourceConfig *
+@@ -189,3 +189,7 @@ func (c *cgroupV1impl) setCgroupMemoryConfig(cgroupPath string, resourceConfig *
  func (c *cgroupV1impl) getCgroupMemoryConfig(cgroupPath string) (*ResourceConfig, error) {
  	return readCgroupMemoryConfig(cgroupPath, cgroupv1MemLimitFile)
  }
@@ -134,10 +134,10 @@ index cffae2ff93e..670a3ff4deb 100644
 +	m.cpuLoadBalanceDisable = true
 +}
 diff --git a/pkg/kubelet/cm/cgroup_v2_manager_linux.go b/pkg/kubelet/cm/cgroup_v2_manager_linux.go
-index 42261b7a7f6..440d812117a 100644
+index d8cf58d79cf..370f672c24a 100644
 --- a/pkg/kubelet/cm/cgroup_v2_manager_linux.go
 +++ b/pkg/kubelet/cm/cgroup_v2_manager_linux.go
-@@ -215,3 +215,7 @@ func cpuSharesToCPUWeight(cpuShares uint64) uint64 {
+@@ -220,3 +220,7 @@ func cpuSharesToCPUWeight(cpuShares uint64) uint64 {
  func cpuWeightToCPUShares(cpuWeight uint64) uint64 {
  	return uint64((((cpuWeight - 1) * 262142) / 9999) + 2)
  }
@@ -146,13 +146,13 @@ index 42261b7a7f6..440d812117a 100644
 +	m.cpuLoadBalanceDisable = true
 +}
 diff --git a/pkg/kubelet/cm/container_manager_linux.go b/pkg/kubelet/cm/container_manager_linux.go
-index 83c07d68f8c..c2a2b7a4998 100644
+index 1a884163b3a..37b6dd185e1 100644
 --- a/pkg/kubelet/cm/container_manager_linux.go
 +++ b/pkg/kubelet/cm/container_manager_linux.go
-@@ -245,6 +245,9 @@ func NewContainerManager(mountUtil mount.Interface, cadvisorInterface cadvisor.I
- 	// Turn CgroupRoot from a string (in cgroupfs path format) to internal CgroupName
+@@ -246,6 +246,9 @@ func NewContainerManager(mountUtil mount.Interface, cadvisorInterface cadvisor.I
  	cgroupRoot := ParseCgroupfsToCgroupName(nodeConfig.CgroupRoot)
  	cgroupManager := NewCgroupManager(subsystems, nodeConfig.CgroupDriver)
+ 	nodeConfig.CgroupVersion = cgroupManager.Version()
 +	if nodeConfig.CPUManagerPolicy == string(cpumanager.PolicyStatic) {
 +		cgroupManager.SetCPULoadBalanceDisable()
 +	}
@@ -160,13 +160,13 @@ index 83c07d68f8c..c2a2b7a4998 100644
  	if nodeConfig.CgroupsPerQOS {
  		// this does default to / when enabled, but this tests against regressions.
 diff --git a/pkg/kubelet/cm/types.go b/pkg/kubelet/cm/types.go
-index aff4c20d429..01011900a60 100644
+index 319ae06f07e..ee478f6021d 100644
 --- a/pkg/kubelet/cm/types.go
 +++ b/pkg/kubelet/cm/types.go
-@@ -88,6 +88,8 @@ type CgroupManager interface {
- 	GetCgroupConfig(name CgroupName, resource v1.ResourceName) (*ResourceConfig, error)
- 	// Set resource config for the specified resource type on the cgroup
+@@ -90,6 +90,8 @@ type CgroupManager interface {
  	SetCgroupConfig(name CgroupName, resource v1.ResourceName, resourceConfig *ResourceConfig) error
+ 	// Version of the cgroup implementation on the host
+ 	Version() int
 +	// Toggle whether CPU load balancing should be disabled for new cgroups the kubelet creates
 +	SetCPULoadBalanceDisable()
  }
