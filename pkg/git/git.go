@@ -203,5 +203,16 @@ func (s CommitsByDate) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 func (s CommitsByDate) Less(i, j int) bool {
 	iDate := s[i].Committer.When
 	jDate := s[j].Committer.When
-	return iDate.Before(jDate)
+	comparison := iDate.Compare(jDate)
+	if comparison < 0 {
+		return true
+	} else if comparison == 0 {
+		// during rebase we frequently rebase the PR several times, this will cause
+		// a group of several commits to have identical commit date, to ensure proper
+		// ordering in those cases we will fallback to original author date
+		iAuthorDate := s[i].Author.When
+		jAuthorDate := s[j].Author.When
+		return iAuthorDate.Before(jAuthorDate)
+	}
+	return false
 }

@@ -40,7 +40,8 @@ func (c *Log) Run() error {
 		return fmt.Errorf("Error reading carries: %w", err)
 	}
 	for _, c := range commits {
-		fmt.Printf("%s\t%-25s\t%s\t%s\n", c.Author.When.Format(time.DateTime),
+		fmt.Printf("%s\t%s\t%-25s\t%s\t%s\n", c.Committer.When.Format(time.DateTime),
+			c.Author.When.Format(time.DateTime),
 			c.Author.Name, c.Hash.String(), utils.FormatMessage(c.Message))
 	}
 	return nil
