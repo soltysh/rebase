@@ -98,6 +98,8 @@ func (c *Apply) Run() error {
 			if err := repository.AbortApply(); err != nil {
 				klog.Errorf("Aborting apply failed: %v", err)
 			}
+			klog.Errorf("The additional fix %s stopped working  and requires manual intervention!", a)
+			return err
 		}
 	}
 	return nil
