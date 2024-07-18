@@ -1,4 +1,4 @@
-From 2ac961b9f744f6e6a34f6b5dda3c97cef6092759 Mon Sep 17 00:00:00 2001
+From 5f375aeba609ff87babd43c8d28d3606a5073343 Mon Sep 17 00:00:00 2001
 From: Maciej Szulik <maszulik@redhat.com>
 Date: Mon, 1 Jul 2024 15:29:44 +0200
 Subject: [PATCH] UPSTREAM: <carry>: necessary fixes
@@ -10,16 +10,18 @@ Subject: [PATCH] UPSTREAM: <carry>: necessary fixes
  3 files changed, 3 insertions(+), 5 deletions(-)
 
 diff --git a/openshift-hack/e2e/include.go b/openshift-hack/e2e/include.go
-index 3275a49bfc1..cbf2ad8f164 100644
+index 6c1d1b66cbd..48efbca4a3e 100644
 --- a/openshift-hack/e2e/include.go
 +++ b/openshift-hack/e2e/include.go
-@@ -19,5 +19,5 @@ import (
+@@ -29,7 +29,7 @@ import (
  	_ "k8s.io/kubernetes/test/e2e/node"
  	_ "k8s.io/kubernetes/test/e2e/scheduling"
  	_ "k8s.io/kubernetes/test/e2e/storage"
 -	_ "k8s.io/kubernetes/test/e2e/storage/csi_mock"
 +	_ "k8s.io/kubernetes/test/e2e/storage/csimock"
- )
+ 	_ "k8s.io/kubernetes/test/e2e/storage/external"
+ 	_ "k8s.io/kubernetes/test/e2e/windows"
+ 
 diff --git a/openshift-kube-apiserver/admission/admissionenablement/admission.go b/openshift-kube-apiserver/admission/admissionenablement/admission.go
 index 9ad1b1e7fb5..a701f6d285c 100644
 --- a/openshift-kube-apiserver/admission/admissionenablement/admission.go
